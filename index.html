@@ -53,6 +53,15 @@
   #flowerCanvas { z-index: 7; }
   #fxCanvas { z-index: 8; }
   #transitionCanvas { z-index: 9; pointer-events: none; }
+  /* 署名层：屏幕像素级，不量化，清晰字 */
+  #signCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 10;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s linear;
+  }
   #vignette {
     position: absolute; inset: 0; z-index: 20;
     pointer-events: none;
@@ -181,6 +190,7 @@
     <canvas id="flowerCanvas" class="layer"></canvas>
     <canvas id="fxCanvas" class="layer"></canvas>
     <canvas id="transitionCanvas" class="layer"></canvas>
+    <canvas id="signCanvas"></canvas>
     <div id="vignette"></div>
   </div>
 
@@ -263,6 +273,7 @@ const starCanvas = document.getElementById('starCanvas');
 const flowerCanvas = document.getElementById('flowerCanvas');
 const fxCanvas = document.getElementById('fxCanvas');
 const transitionCanvas = document.getElementById('transitionCanvas');
+const signCanvas = document.getElementById('signCanvas');
 const vignette = document.getElementById('vignette');
 const glowWrap = document.getElementById('glowWrap');
 const sunWrap = document.getElementById('sunWrap');
@@ -280,20 +291,17 @@ const starCtx = starCanvas.getContext('2d');
 const flowerCtx = flowerCanvas.getContext('2d');
 const fxCtx = fxCanvas.getContext('2d');
 const transCtx = transitionCanvas.getContext('2d');
+const signCtx = signCanvas.getContext('2d');
 
-// 手机（窄屏 + 触摸）用 PIXEL=4，桌面用 3
 const isMobile = (window.innerWidth < 720) || ('ontouchstart' in window && window.innerWidth < 1024);
 let PIXEL = isMobile ? 4 : 3;
 let W = 0, H = 0, COLS = 0, ROWS = 0;
 
-// SUN：横屏一套配置
 const SUN = { cx: 0.42, cy: 0.44, w: 0.50, h: 0.65, rot: -Math.PI / 4 };
-
 const WIND_ANGLE = Math.PI * 0.23;
 const WIND_DX = Math.cos(WIND_ANGLE);
 const WIND_DY = Math.sin(WIND_ANGLE);
 
-// 性能上限
 const MAX_PARTICLES = isMobile ? 160 : 400;
 const MAX_RIPPLES = isMobile ? 20 : 40;
 
@@ -602,9 +610,6 @@ let transitionSwapped = false;
 
 const SIGN_VINC = { text: 'vinc', color: '#0010ff', align: 'left'  };
 const SIGN_DRS  = { text: 'Dr.S', color: '#8fa8c8', align: 'right' };
-
-const signVincCanvas = document.createElement('canvas');
-const signDrSCanvas  = document.createElement('canvas');
 
 // ======================================================
 // 4. 数据预生成
@@ -986,7 +991,9 @@ function startBlackTransition(timelineIdx) {
   transitionCanvas.style.width = W + 'px'; transitionCanvas.style.height = H + 'px';
   transCtx.clearRect(0, 0, COLS, ROWS);
 
-  prepareSigns();
+  // 画署名到 signCanvas（屏幕像素级，清晰字）
+  drawSigns();
+  signCanvas.style.opacity = 0;
 
   currentTimelineIdx = timelineIdx;
   updateScenePanelActive(timelineIdx);
@@ -1041,63 +1048,27 @@ function renderBlackRetreat(waveFront) {
   }
 }
 
-function renderSignTo(canvas, sign) {
+// 把署名画到 signCanvas（屏幕像素级，清晰字，不量化）
+function drawSigns() {
+  signCanvas.width = W;
+  signCanvas.height = H;
+  signCtx.clearRect(0, 0, W, H);
+  signCtx.imageSmoothingEnabled = true; // 清晰字
+
   const fontSize = 22;
-  // 署名位置抬高到距底部 60 像素，躲开底部黑条/hint
-  const pad = 60;
+  const pad = 50; // 距底部 50 屏幕像素，躲开 .hint 和底部黑条
+  signCtx.font = fontSize + 'px "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif';
+  signCtx.textBaseline = 'bottom';
 
-  const tmp = document.createElement('canvas');
-  tmp.width = W; tmp.height = H;
-  const tctx = tmp.getContext('2d');
-  tctx.fillStyle = '#000';
-  tctx.fillRect(0, 0, W, H);
-  tctx.fillStyle = '#fff';
-  tctx.font = fontSize + 'px "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif';
-  tctx.textBaseline = 'bottom';
+  // vinc（左下）
+  signCtx.fillStyle = SIGN_VINC.color;
+  signCtx.textAlign = 'left';
+  signCtx.fillText(SIGN_VINC.text, pad, H - pad);
 
-  if (sign.align === 'left') {
-    tctx.textAlign = 'left';
-    tctx.fillText(sign.text, pad, H - pad);
-  } else {
-    tctx.textAlign = 'right';
-    tctx.fillText(sign.text, W - pad, H - pad);
-  }
-
-  const img = tctx.getImageData(0, 0, W, H);
-  const d = img.data;
-
-  canvas.width = COLS;
-  canvas.height = ROWS;
-  const cctx = canvas.getContext('2d');
-  cctx.clearRect(0, 0, COLS, ROWS);
-
-  const THRESHOLD = 0.30;
-  for (let ty = 0; ty < ROWS; ty++) {
-    const sy0 = Math.floor(ty * H / ROWS);
-    const sy1 = Math.max(sy0 + 1, Math.floor((ty + 1) * H / ROWS));
-    for (let tx = 0; tx < COLS; tx++) {
-      const sx0 = Math.floor(tx * W / COLS);
-      const sx1 = Math.max(sx0 + 1, Math.floor((tx + 1) * W / COLS));
-      let bright = 0, total = 0;
-      for (let sy = sy0; sy < sy1; sy++) {
-        const rowBase = sy * W * 4;
-        for (let sx = sx0; sx < sx1; sx++) {
-          const idx = rowBase + sx * 4;
-          if (d[idx] > 128) bright++;
-          total++;
-        }
-      }
-      if (total > 0 && bright / total > THRESHOLD) {
-        cctx.fillStyle = sign.color;
-        cctx.fillRect(tx, ty, 1, 1);
-      }
-    }
-  }
-}
-
-function prepareSigns() {
-  renderSignTo(signVincCanvas, SIGN_VINC);
-  renderSignTo(signDrSCanvas,  SIGN_DRS);
+  // Dr.S（右下）
+  signCtx.fillStyle = SIGN_DRS.color;
+  signCtx.textAlign = 'right';
+  signCtx.fillText(SIGN_DRS.text, W - pad, H - pad);
 }
 
 function updateBlackTransition(dt) {
@@ -1111,6 +1082,7 @@ function updateBlackTransition(dt) {
     const p = transitionT / tFillEnd;
     const waveFront = -1.5 + p * 3.5;
     renderBlackFill(waveFront);
+    signCanvas.style.opacity = 0;
   } else if (transitionT < tHoldEnd) {
     if (!transitionSwapped) {
       transCtx.clearRect(0, 0, COLS, ROWS);
@@ -1133,13 +1105,7 @@ function updateBlackTransition(dt) {
     if (alpha > 1) alpha = 1;
     alpha = alpha * alpha * (3 - 2 * alpha);
 
-    if (alpha > 0.01) {
-      transCtx.globalAlpha = alpha;
-      transCtx.imageSmoothingEnabled = false;
-      transCtx.drawImage(signVincCanvas, 0, 0, COLS, ROWS);
-      transCtx.drawImage(signDrSCanvas, 0, 0, COLS, ROWS);
-      transCtx.globalAlpha = 1;
-    }
+    signCanvas.style.opacity = alpha;
   } else {
     if (!transitionSwapped) {
       transCtx.clearRect(0, 0, COLS, ROWS);
@@ -1149,6 +1115,7 @@ function updateBlackTransition(dt) {
       renderScene(currentScene);
       transitionSwapped = true;
     }
+    signCanvas.style.opacity = 0;
     const p = (transitionT - tHoldEnd) / (1 - tHoldEnd);
     const waveFront = -1.5 + p * 3.5;
     renderBlackRetreat(waveFront);
@@ -1159,6 +1126,7 @@ function updateBlackTransition(dt) {
     transitionNewScene = null;
     transitionSwapped = false;
     transCtx.clearRect(0, 0, COLS, ROWS);
+    signCanvas.style.opacity = 0;
     sceneInfo.textContent = '当前：' + currentScene.name;
   }
 }
@@ -1528,7 +1496,6 @@ goFullBtn.addEventListener('click', function (e) {
   rotateHint.classList.remove('show');
 });
 function checkOrientation() {
-  // 只在竖屏 + 触摸设备时显示提示
   if (isPortrait() && isMobile) {
     rotateHint.classList.add('show');
   } else {
@@ -1851,6 +1818,10 @@ function resizeAll() {
   transitionCanvas.width = COLS; transitionCanvas.height = ROWS;
   transitionCanvas.style.width = W + 'px'; transitionCanvas.style.height = H + 'px';
   transCtx.clearRect(0, 0, COLS, ROWS);
+
+  signCanvas.width = W; signCanvas.height = H;
+  signCanvas.style.width = W + 'px'; signCanvas.style.height = H + 'px';
+  signCtx.clearRect(0, 0, W, H);
 
   preGenerate();
   const h = new Date().getHours() + new Date().getMinutes() / 60;
