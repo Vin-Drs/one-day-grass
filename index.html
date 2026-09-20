@@ -12,6 +12,7 @@
     touch-action: none; user-select: none; -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
     font-family: monospace;
+    overscroll-behavior: none;
   }
   #scene { position: absolute; inset: 0; overflow: hidden; }
   .layer {
@@ -208,7 +209,11 @@ const transCtx = transitionCanvas.getContext('2d');
 const PIXEL = 3;
 let W = 0, H = 0, COLS = 0, ROWS = 0;
 
+// SUN 配置：横屏 / 竖屏两套。resizeAll 里按屏幕方向切换。
+const SUN_LANDSCAPE = { cx: 0.42, cy: 0.44, w: 0.50, h: 0.65, rot: -Math.PI / 4 };
+const SUN_PORTRAIT  = { cx: 0.50, cy: 0.38, w: 0.72, h: 0.72, rot: -Math.PI / 4 };
 const SUN = { cx: 0.42, cy: 0.44, w: 0.50, h: 0.65, rot: -Math.PI / 4 };
+
 const WIND_ANGLE = Math.PI * 0.23;
 const WIND_DX = Math.cos(WIND_ANGLE);
 const WIND_DY = Math.sin(WIND_ANGLE);
@@ -497,10 +502,9 @@ let currentScene = null;
 let currentTimelineIdx = 0;
 let isTransitioning = false;
 let transitionT = 0;
-// 三段：铺满 3 秒 / 停留 3 秒（签名淡入淡出）/ 退走 3 秒，共 9 秒
 const TRANSITION_DURATION = 12.0;
-const TRANSITION_FILL_RATIO = 3.0 / 9.0;
-const TRANSITION_HOLD_RATIO = 3.0 / 9.0;
+const TRANSITION_FILL_RATIO = 4.0 / 12.0;
+const TRANSITION_HOLD_RATIO = 4.0 / 12.0;
 let lastTickTime = performance.now();
 
 const bladeData = [];
@@ -517,11 +521,6 @@ let currentWaveFront = -1, currentGustEnv = 0, currentElapsed = 0;
 let transitionNewScene = null;
 let transitionSwapped = false;
 
-// ======================================================
-// 黑幕角落的两个署名
-//   vinc   —— 左下角，蓝色
-//   Dr.S   —— 右下角，冷灰蓝
-// ======================================================
 const SIGN_VINC = { text: 'vinc', color: '#0010ff', align: 'left'  };
 const SIGN_DRS  = { text: 'Dr.S', color: '#8fa8c8', align: 'right' };
 
@@ -882,7 +881,7 @@ function renderScene(scene) {
 }
 
 // ======================================================
-// 7. 黑浪转场（三段依次执行）
+// 7. 黑浪转场
 // ======================================================
 function startBlackTransition(timelineIdx) {
   const newScene = SCENES[TIMELINE[timelineIdx].idx];
@@ -960,7 +959,6 @@ function renderBlackRetreat(waveFront) {
   }
 }
 
-// 渲染一个署名到指定 canvas（转场像素级），量化成纯色
 function renderSignTo(canvas, sign) {
   const fontSize = 22;
   const pad = 30;
@@ -1027,12 +1025,10 @@ function updateBlackTransition(dt) {
   const tHoldEnd = TRANSITION_FILL_RATIO + TRANSITION_HOLD_RATIO;
 
   if (transitionT < tFillEnd) {
-    // 段1：铺满。waveFront 从 -1.5 到 2.0，起止都干净
     const p = transitionT / tFillEnd;
     const waveFront = -1.5 + p * 3.5;
     renderBlackFill(waveFront);
   } else if (transitionT < tHoldEnd) {
-    // 段2：全屏纯黑 + 角落两个署名淡入淡出
     if (!transitionSwapped) {
       transCtx.clearRect(0, 0, COLS, ROWS);
       transCtx.fillStyle = '#000';
@@ -1047,7 +1043,6 @@ function updateBlackTransition(dt) {
 
     const pHold = (transitionT - tFillEnd) / (tHoldEnd - tFillEnd);
 
-    // 签名淡入淡出：0~0.2 淡入，0.2~0.8 保持，0.8~1 淡出
     let alpha = 1;
     if (pHold < 0.2) alpha = pHold / 0.2;
     else if (pHold > 0.8) alpha = (1 - pHold) / 0.2;
@@ -1063,7 +1058,6 @@ function updateBlackTransition(dt) {
       transCtx.globalAlpha = 1;
     }
   } else {
-    // 段3：退走。waveFront 从 -1.5 到 2.0，起止都干净
     if (!transitionSwapped) {
       transCtx.clearRect(0, 0, COLS, ROWS);
       transCtx.fillStyle = '#000';
@@ -1710,6 +1704,16 @@ function resizeAll() {
   H = window.innerHeight;
   COLS = Math.ceil(W / PIXEL);
   ROWS = Math.ceil(H / PIXEL);
+
+  // 按屏幕方向切换 SUN 配置
+  const portrait = H > W;
+  const cfg = portrait ? SUN_PORTRAIT : SUN_LANDSCAPE;
+  SUN.cx = cfg.cx;
+  SUN.cy = cfg.cy;
+  SUN.w = cfg.w;
+  SUN.h = cfg.h;
+  SUN.rot = cfg.rot;
+
   [bgCanvas, grassCanvas, waveCanvas, starCanvas, flowerCanvas, fxCanvas].forEach(c => {
     c.width = COLS; c.height = ROWS;
     c.style.width = W + 'px'; c.style.height = H + 'px';
