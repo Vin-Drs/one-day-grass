@@ -1053,17 +1053,19 @@ function renderBlackRetreat(waveFront) {
   }
 }
 
-// 画署名：先在屏幕像素级画清晰字，然后缩小 → 硬边放大，得到像素化观感
+// 画署名：手写体 → 缩到 1/2 分辨率 → 硬边放大回全屏，得到像素化手写字
 function drawSigns() {
-  // 1) 在 signTmpCanvas 上画清晰字（屏幕像素级）
+  // 1) 在 signTmpCanvas 上用手写体画清晰字（屏幕像素级）
   signTmpCanvas.width = W;
   signTmpCanvas.height = H;
   signTmpCtx.clearRect(0, 0, W, H);
   signTmpCtx.imageSmoothingEnabled = true;
 
-  const fontSize = 22;
+  const fontSize = 26;
   const pad = 30;
-  signTmpCtx.font = fontSize + 'px "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif';
+  // 手写体：楷体优先，退回系统 cursive
+  const handFont = '"Kaiti SC","KaiTi","STKaiti","楷体","LiSu","STLiti",cursive,"PingFang SC","Microsoft YaHei",sans-serif';
+  signTmpCtx.font = fontSize + 'px ' + handFont;
   signTmpCtx.textBaseline = 'bottom';
 
   signTmpCtx.fillStyle = SIGN_VINC.color;
@@ -1074,24 +1076,23 @@ function drawSigns() {
   signTmpCtx.textAlign = 'right';
   signTmpCtx.fillText(SIGN_DRS.text, W - pad, H - pad);
 
-  // 2) 把清晰字缩到 1/PIXEL 的小 canvas，再硬边放大回 signCanvas
-  //    这样得到"每个像素块 = PIXEL × PIXEL 屏幕像素"的像素化字，且笔画完整。
-  const smallW = Math.max(1, Math.floor(W / PIXEL));
-  const smallH = Math.max(1, Math.floor(H / PIXEL));
+  // 2) 缩到 1/2 分辨率（固定 1/2，不管 PIXEL 多少）
+  //    22~26px 的字缩到 1/2 后还有 13px，笔画够粗，像素块明显。
+  const smallW = Math.max(1, Math.floor(W / 2));
+  const smallH = Math.max(1, Math.floor(H / 2));
 
-  // 用小 canvas 承接缩小后的字
   const smallCanvas = document.createElement('canvas');
   smallCanvas.width = smallW;
   smallCanvas.height = smallH;
   const smallCtx = smallCanvas.getContext('2d');
-  smallCtx.imageSmoothingEnabled = true; // 缩小用平滑（平均降采样，保笔画）
+  smallCtx.imageSmoothingEnabled = true;
   smallCtx.clearRect(0, 0, smallW, smallH);
   smallCtx.drawImage(signTmpCanvas, 0, 0, W, H, 0, 0, smallW, smallH);
 
-  // 3) 把 signCanvas 铺满：硬边放大
+  // 3) 硬边放大回全屏：每个小像素 = 2×2 屏幕像素，像素块清晰
   signCanvas.width = W;
   signCanvas.height = H;
-  signCtx.imageSmoothingEnabled = false; // 硬边放大
+  signCtx.imageSmoothingEnabled = false;
   signCtx.clearRect(0, 0, W, H);
   signCtx.drawImage(smallCanvas, 0, 0, smallW, smallH, 0, 0, W, H);
 }
