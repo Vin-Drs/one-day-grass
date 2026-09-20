@@ -487,6 +487,22 @@ function findTimelineIdx(h) {
 // ======================================================
 function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+ function parseColor(c) {
+  if (typeof c !== 'string') return [0,0,0,1];
+  if (c[0] === '#') {
+    const h = c.slice(1);
+    let r, g, b;
+    if (h.length === 3) {
+      r = parseInt(h[0]+h[0],16); g = parseInt(h[1]+h[1],16); b = parseInt(h[2]+h[2],16);
+    } else {
+      r = parseInt(h.slice(0,2),16); g = parseInt(h.slice(2,4),16); b = parseInt(h.slice(4,6),16);
+    }
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return [0,0,0,1];
+    return [r, g, b, 1];
+  }
+  return [0,0,0,1];
+}
+ 
 function lightMask(px, py) {
   const dx = px - SUN.cx, dy = py - SUN.cy;
   const cos = Math.cos(-SUN.rot), sin = Math.sin(-SUN.rot);
@@ -1053,34 +1069,29 @@ function renderBlackRetreat(waveFront) {
   }
 }
 
-// 画署名：手写体 → 缩到 1/2 分辨率 → 硬边放大回全屏，得到像素化手写字
-function drawSigns() {
-  // 1) 在 signTmpCanvas 上用手写体画清晰字（屏幕像素级）
+// 画一个署名到 signCanvas（手写体 → 缩 1/2 → 二值化染色 → 硬边放大）
+// sign 对象：{ text, color, align }
+// 所有亮像素都严格等于 sign.color，没有半透明杂色。
+function renderOneSign(sign) {
+  // 1) 用白色手写体画到 signTmpCanvas
   signTmpCanvas.width = W;
   signTmpCanvas.height = H;
   signTmpCtx.clearRect(0, 0, W, H);
   signTmpCtx.imageSmoothingEnabled = true;
 
-  const fontSize = 26;
+  const fontSize = 28;
   const pad = 30;
-  // 手写体：楷体优先，退回系统 cursive
   const handFont = '"Kaiti SC","KaiTi","STKaiti","楷体","LiSu","STLiti",cursive,"PingFang SC","Microsoft YaHei",sans-serif';
   signTmpCtx.font = fontSize + 'px ' + handFont;
   signTmpCtx.textBaseline = 'bottom';
+  signTmpCtx.fillStyle = '#ffffff';
+  signTmpCtx.textAlign = (sign.align === 'left') ? 'left' : 'right';
+  const x = (sign.align === 'left') ? pad : (W - pad);
+  signTmpCtx.fillText(sign.text, x, H - pad);
 
-  signTmpCtx.fillStyle = SIGN_VINC.color;
-  signTmpCtx.textAlign = 'left';
-  signTmpCtx.fillText(SIGN_VINC.text, pad, H - pad);
-
-  signTmpCtx.fillStyle = SIGN_DRS.color;
-  signTmpCtx.textAlign = 'right';
-  signTmpCtx.fillText(SIGN_DRS.text, W - pad, H - pad);
-
-  // 2) 缩到 1/2 分辨率（固定 1/2，不管 PIXEL 多少）
-  //    22~26px 的字缩到 1/2 后还有 13px，笔画够粗，像素块明显。
+  // 2) 缩到 1/2 分辨率
   const smallW = Math.max(1, Math.floor(W / 2));
   const smallH = Math.max(1, Math.floor(H / 2));
-
   const smallCanvas = document.createElement('canvas');
   smallCanvas.width = smallW;
   smallCanvas.height = smallH;
@@ -1089,14 +1100,33 @@ function drawSigns() {
   smallCtx.clearRect(0, 0, smallW, smallH);
   smallCtx.drawImage(signTmpCanvas, 0, 0, W, H, 0, 0, smallW, smallH);
 
-  // 3) 硬边放大回全屏：每个小像素 = 2×2 屏幕像素，像素块清晰
-  signCanvas.width = W;
-  signCanvas.height = H;
+  // 3) 二值化染色：alpha > 128 → 纯色，否则透明
+  const img = smallCtx.getImageData(0, 0, smallW, smallH);
+  const d = img.data;
+  const col = parseColor(sign.color);
+  const R = col[0], G = col[1], B = col[2];
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3];
+    if (a > 128) {
+      d[i] = R; d[i + 1] = G; d[i + 2] = B; d[i + 3] = 255;
+    } else {
+      d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 0;
+    }
+  }
+  smallCtx.putImageData(img, 0, 0);
+
+  // 4) 硬边放大回 signCanvas
   signCtx.imageSmoothingEnabled = false;
-  signCtx.clearRect(0, 0, W, H);
   signCtx.drawImage(smallCanvas, 0, 0, smallW, smallH, 0, 0, W, H);
 }
 
+function drawSigns() {
+  signCanvas.width = W;
+  signCanvas.height = H;
+  signCtx.clearRect(0, 0, W, H);
+  renderOneSign(SIGN_VINC);
+  renderOneSign(SIGN_DRS);
+}
 function updateBlackTransition(dt) {
   transitionT += dt / TRANSITION_DURATION;
   if (transitionT >= 1) transitionT = 1;
