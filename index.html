@@ -96,12 +96,19 @@
     pointer-events: none;
     text-shadow: 0 1px 4px rgba(0,0,0,0.6);
   }
-  #scenePanel {
+   #scenePanel {
     position: fixed; top: 6px; right: 102px;
     display: flex; flex-direction: row;
     gap: 4px;
     z-index: 100;
     user-select: none; -webkit-user-select: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  #scenePanel.show {
+    opacity: 1;
+    pointer-events: auto;
   }
   .sceneBtn {
     padding: 6px 8px;
@@ -1920,6 +1927,16 @@ window.addEventListener('load', function () {
     console.log('主脚本执行成功');
   } catch (e) {
     console.error('主脚本执行失败:', e);
+  }
+});
+</script>
+
+<script>
+// 按 ` 键（波浪键）切换开发者面板显示/隐藏
+document.addEventListener('keydown', function (e) {
+  if (e.key === '`' || e.key === '~' || e.code === 'Backquote') {
+    var panel = document.getElementById('scenePanel');
+    if (panel) panel.classList.toggle('show');
   }
 });
 </script>
