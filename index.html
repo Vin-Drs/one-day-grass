@@ -625,8 +625,9 @@ let currentWaveFront = -1, currentGustEnv = 0, currentElapsed = 0;
 let transitionNewScene = null;
 let transitionSwapped = false;
 
-const SIGN_VINC = { text: 'vinc', color: '#0010ff', align: 'left'  };
-const SIGN_DRS  = { text: 'Dr.S', color: '#8fa8c8', align: 'right' };
+const SIGN_VINC = { text: 'vinc', color: '#0010ff' };
+const SIGN_DRS  = { text: 'Dr.S', color: '#8fa8c8' };
+const SIGN_GAP  = 18;  // 两个署名之间的间距（屏幕像素）
 
 // 署名渲染用的临时 canvas
 const signTmpCanvas = document.createElement('canvas');
@@ -1068,28 +1069,24 @@ function renderBlackRetreat(waveFront) {
   }
 }
 
-// 画一个署名到 signCanvas：
-//   1) 手写体画白色字到 signTmpCanvas（屏幕像素级）
-//   2) 缩到 2/3 分辨率
-//   3) 二值化染色（alpha > 48 保留，否则透明）——阈值低，细笔画不丢
-//   4) 硬边放大回 signCanvas
-function renderOneSign(sign) {
+// 把两个署名并排画到右下角：
+//   vinc 在左，Dr.S 在右，中间留 SIGN_GAP 间距，整体距右/下边 pad。
+//   每个字：手写体白色字 → 缩到 2/3 → 二值化染色 → 硬边放大。
+function renderOneSignTo(targetCanvas, targetCtx, sign, x, y, fontSize) {
+  // 1) 画白色手写字到 signTmpCanvas
   signTmpCanvas.width = W;
   signTmpCanvas.height = H;
   signTmpCtx.clearRect(0, 0, W, H);
   signTmpCtx.imageSmoothingEnabled = true;
 
-  const fontSize = 32;
-  const pad = 30;
   const handFont = '"Kaiti SC","KaiTi","STKaiti","楷体","LiSu","STLiti",cursive,"PingFang SC","Microsoft YaHei",sans-serif';
   signTmpCtx.font = fontSize + 'px ' + handFont;
-  signTmpCtx.textBaseline = 'bottom';
+  signTmpCtx.textBaseline = 'alphabetic';
   signTmpCtx.fillStyle = '#ffffff';
-  signTmpCtx.textAlign = (sign.align === 'left') ? 'left' : 'right';
-  const x = (sign.align === 'left') ? pad : (W - pad);
-  signTmpCtx.fillText(sign.text, x, H - pad);
+  signTmpCtx.textAlign = 'left';
+  signTmpCtx.fillText(sign.text, x, y);
 
-  // 缩到 2/3
+  // 2) 缩到 2/3
   const smallW = Math.max(1, Math.floor(W * 2 / 3));
   const smallH = Math.max(1, Math.floor(H * 2 / 3));
   const smallCanvas = document.createElement('canvas');
@@ -1100,7 +1097,7 @@ function renderOneSign(sign) {
   smallCtx.clearRect(0, 0, smallW, smallH);
   smallCtx.drawImage(signTmpCanvas, 0, 0, W, H, 0, 0, smallW, smallH);
 
-  // 二值化染色（阈值 48，比 128 低很多，细笔画保留）
+  // 3) 二值化染色（阈值 48，细笔画保留）
   const img = smallCtx.getImageData(0, 0, smallW, smallH);
   const d = img.data;
   const col = parseColor(sign.color);
@@ -1115,78 +1112,39 @@ function renderOneSign(sign) {
   }
   smallCtx.putImageData(img, 0, 0);
 
-  signCtx.imageSmoothingEnabled = false;
-  signCtx.drawImage(smallCanvas, 0, 0, smallW, smallH, 0, 0, W, H);
+  // 4) 硬边放大回目标 canvas
+  targetCtx.imageSmoothingEnabled = false;
+  targetCtx.drawImage(smallCanvas, 0, 0, smallW, smallH, 0, 0, W, H);
 }
 
 function drawSigns() {
   signCanvas.width = W;
   signCanvas.height = H;
   signCtx.clearRect(0, 0, W, H);
-  renderOneSign(SIGN_VINC);
-  renderOneSign(SIGN_DRS);
+
+  const fontSize = 32;
+  const pad = 30;
+
+  // 量 Dr.S 的宽度（用一个临时 ctx 量）
+  const measureCanvas = document.createElement('canvas');
+  const mctx = measureCanvas.getContext('2d');
+  const handFont = '"Kaiti SC","KaiTi","STKaiti","楷体","LiSu","STLiti",cursive,"PingFang SC","Microsoft YaHei",sans-serif';
+  mctx.font = fontSize + 'px ' + handFont;
+  const drsW = mctx.measureText(SIGN_DRS.text).width;
+  const vincW = mctx.measureText(SIGN_VINC.text).width;
+
+  // 基线 y 坐标（距底 pad）
+  const baseY = H - pad;
+
+  // 两个署名整体贴右下角：Dr.S 右边缘在 W-pad，vinc 在 Dr.S 左边（间隔 SIGN_GAP）
+  const drsX = W - pad - drsW;
+  const vincX = drsX - SIGN_GAP - vincW;
+
+  // 先画 vinc（左），再画 Dr.S（右）——顺序无所谓，各自独立到 signCanvas
+  renderOneSignTo(signCanvas, signCtx, SIGN_VINC, vincX, baseY, fontSize);
+  renderOneSignTo(signCanvas, signCtx, SIGN_DRS,  drsX,  baseY, fontSize);
 }
-
-function updateBlackTransition(dt) {
-  transitionT += dt / TRANSITION_DURATION;
-  if (transitionT >= 1) transitionT = 1;
-
-  const tFillEnd = TRANSITION_FILL_RATIO;
-  const tHoldEnd = TRANSITION_FILL_RATIO + TRANSITION_HOLD_RATIO;
-
-  if (transitionT < tFillEnd) {
-    const p = transitionT / tFillEnd;
-    const waveFront = -1.5 + p * 3.5;
-    renderBlackFill(waveFront);
-    signCanvas.style.opacity = 0;
-  } else if (transitionT < tHoldEnd) {
-    if (!transitionSwapped) {
-      transCtx.clearRect(0, 0, COLS, ROWS);
-      transCtx.fillStyle = '#000';
-      transCtx.fillRect(0, 0, COLS, ROWS);
-      currentScene = transitionNewScene;
-      renderScene(currentScene);
-      transitionSwapped = true;
-    }
-    transCtx.clearRect(0, 0, COLS, ROWS);
-    transCtx.fillStyle = '#000';
-    transCtx.fillRect(0, 0, COLS, ROWS);
-
-    const pHold = (transitionT - tFillEnd) / (tHoldEnd - tFillEnd);
-
-    let alpha = 1;
-    if (pHold < 0.2) alpha = pHold / 0.2;
-    else if (pHold > 0.8) alpha = (1 - pHold) / 0.2;
-    if (alpha < 0) alpha = 0;
-    if (alpha > 1) alpha = 1;
-    alpha = alpha * alpha * (3 - 2 * alpha);
-
-    signCanvas.style.opacity = alpha;
-  } else {
-    if (!transitionSwapped) {
-      transCtx.clearRect(0, 0, COLS, ROWS);
-      transCtx.fillStyle = '#000';
-      transCtx.fillRect(0, 0, COLS, ROWS);
-      currentScene = transitionNewScene;
-      renderScene(currentScene);
-      transitionSwapped = true;
-    }
-    signCanvas.style.opacity = 0;
-    const p = (transitionT - tHoldEnd) / (1 - tHoldEnd);
-    const waveFront = -1.5 + p * 3.5;
-    renderBlackRetreat(waveFront);
-  }
-
-  if (transitionT >= 1) {
-    isTransitioning = false;
-    transitionNewScene = null;
-    transitionSwapped = false;
-    transCtx.clearRect(0, 0, COLS, ROWS);
-    signCanvas.style.opacity = 0;
-    sceneInfo.textContent = '当前：' + currentScene.name;
-  }
-}
-
+ 
 // ======================================================
 // 8. 风浪
 // ======================================================
