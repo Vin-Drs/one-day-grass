@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>一日之草</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -87,7 +87,7 @@
     text-shadow: 0 1px 4px rgba(0,0,0,0.6);
   }
   #scenePanel {
-    position: fixed; top: 6px; right: 100px;
+    position: fixed; top: 6px; right: 102px;
     display: flex; flex-direction: row;
     gap: 4px;
     z-index: 100;
@@ -113,6 +113,54 @@
     background: rgba(255,255,255,0.32);
     color: #fff;
     border-color: rgba(255,255,255,0.7);
+  }
+  /* 全屏按钮 */
+  #fullBtn {
+    position: fixed; top: 6px; right: 6px;
+    width: 40px; height: 40px; z-index: 50;
+    cursor: pointer; opacity: 0.8;
+    transition: opacity 0.2s, transform 0.15s;
+    pointer-events: auto;
+  }
+  #fullBtn:active { transform: scale(0.9); }
+  #fullBtn svg { width: 100%; height: 100%; }
+  /* 横屏提示层 */
+  #rotateHint {
+    position: fixed; inset: 0; z-index: 200;
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    background: rgba(0,0,0,0.72);
+    color: rgba(255,255,255,0.85);
+    font-family: monospace;
+    text-align: center;
+    user-select: none; -webkit-user-select: none;
+  }
+  #rotateHint.show { display: flex; }
+  #rotateHint .icon {
+    width: 64px; height: 64px;
+    margin-bottom: 18px;
+    animation: rotatePhone 2.4s ease-in-out infinite;
+  }
+  #rotateHint .line1 { font-size: 15px; letter-spacing: 2px; margin-bottom: 8px; }
+  #rotateHint .line2 { font-size: 11px; letter-spacing: 1px; color: rgba(255,255,255,0.5); margin-bottom: 28px; }
+  #rotateHint button {
+    padding: 10px 22px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: rgba(255,255,255,0.9);
+    font-family: monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    border-radius: 20px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #rotateHint button:active { transform: scale(0.95); }
+  @keyframes rotatePhone {
+    0%, 20% { transform: rotate(0deg); }
+    45%, 75% { transform: rotate(-90deg); }
+    100% { transform: rotate(-90deg); }
   }
   @media (max-width: 720px) {
     #scenePanel {
@@ -165,6 +213,21 @@
     </svg>
   </div>
 
+  <div id="fullBtn" title="全屏">
+    <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#e8f5c8">
+        <rect x="1" y="1" width="5" height="1"/>
+        <rect x="1" y="1" width="1" height="5"/>
+        <rect x="10" y="1" width="5" height="1"/>
+        <rect x="14" y="1" width="1" height="5"/>
+        <rect x="1" y="14" width="5" height="1"/>
+        <rect x="1" y="10" width="1" height="5"/>
+        <rect x="10" y="14" width="5" height="1"/>
+        <rect x="14" y="10" width="1" height="5"/>
+      </g>
+    </svg>
+  </div>
+
   <div id="scenePanel">
     <button class="sceneBtn" data-tl="0">清晨</button>
     <button class="sceneBtn" data-tl="1">草地</button>
@@ -173,6 +236,17 @@
     <button class="sceneBtn" data-tl="4">草地午后</button>
     <button class="sceneBtn" data-tl="5">下午草地</button>
     <button class="sceneBtn" data-tl="6">夜间</button>
+  </div>
+
+  <div id="rotateHint">
+    <svg class="icon" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect x="9" y="4" width="14" height="24" rx="2" fill="none" stroke="#e8f5c8" stroke-width="1.5"/>
+      <rect x="13" y="6" width="6" height="1.5" fill="#e8f5c8"/>
+      <rect x="13" y="24" width="6" height="1.5" fill="#e8f5c8"/>
+    </svg>
+    <div class="line1">请把手机横过来</div>
+    <div class="line2">这是一片横着生长的草</div>
+    <button id="goFullBtn">进入全屏</button>
   </div>
 
   <div id="sceneInfo">当前：清晨</div>
@@ -195,6 +269,9 @@ const vignette = document.getElementById('vignette');
 const glowWrap = document.getElementById('glowWrap');
 const sunWrap = document.getElementById('sunWrap');
 const sceneInfo = document.getElementById('sceneInfo');
+const fullBtn = document.getElementById('fullBtn');
+const rotateHint = document.getElementById('rotateHint');
+const goFullBtn = document.getElementById('goFullBtn');
 
 const bgCtx = bgCanvas.getContext('2d');
 const glowCtx = glowLayer.getContext('2d');
@@ -206,17 +283,21 @@ const flowerCtx = flowerCanvas.getContext('2d');
 const fxCtx = fxCanvas.getContext('2d');
 const transCtx = transitionCanvas.getContext('2d');
 
-const PIXEL = 3;
+// 手机（窄屏 + 触摸）用 PIXEL=4，桌面用 3
+const isMobile = (window.innerWidth < 720) || ('ontouchstart' in window && window.innerWidth < 1024);
+let PIXEL = isMobile ? 4 : 3;
 let W = 0, H = 0, COLS = 0, ROWS = 0;
 
-// SUN 配置：横屏 / 竖屏两套。resizeAll 里按屏幕方向切换。
-const SUN_LANDSCAPE = { cx: 0.42, cy: 0.44, w: 0.50, h: 0.65, rot: -Math.PI / 4 };
-const SUN_PORTRAIT  = { cx: 0.50, cy: 0.38, w: 0.72, h: 0.72, rot: -Math.PI / 4 };
+// SUN：恢复横屏一套配置
 const SUN = { cx: 0.42, cy: 0.44, w: 0.50, h: 0.65, rot: -Math.PI / 4 };
 
 const WIND_ANGLE = Math.PI * 0.23;
 const WIND_DX = Math.cos(WIND_ANGLE);
 const WIND_DY = Math.sin(WIND_ANGLE);
+
+// 性能上限
+const MAX_PARTICLES = isMobile ? 140 : 400;
+const MAX_RIPPLES = isMobile ? 18 : 40;
 
 // ======================================================
 // 1. 场景配色
@@ -556,6 +637,8 @@ function preGenerate() {
   const sunW = Math.ceil((W + 60) / PIXEL);
   const sunH = Math.ceil((H + 60) / PIXEL);
   const offsetPx = 30 / PIXEL;
+  // 手机上减少光斑像素数量
+  const lightDensityMul = isMobile ? 0.55 : 1.0;
   for (let y = 0; y < sunH; y++) {
     for (let x = 0; x < sunW; x++) {
       const screenX = (x - offsetPx) * PIXEL / W;
@@ -563,7 +646,7 @@ function preGenerate() {
       const m = lightMask(screenX, screenY);
       if (m < 0.05) continue;
       const n = valueNoise(x * 0.15, y * 0.15);
-      const density = 0.2 + m * 0.45 + n * 0.1;
+      const density = (0.2 + m * 0.45 + n * 0.1) * lightDensityMul;
       if (Math.random() > density) continue;
       const t = m * 0.7 + n * 0.3;
       lightPixels.push({ x, y, t, phase: Math.random() * Math.PI * 2 });
@@ -571,7 +654,8 @@ function preGenerate() {
   }
 
   const totalPx = sunW * sunH;
-  const shadowCount = Math.max(20, Math.floor(totalPx / 5000));
+  const shadowMul = isMobile ? 0.5 : 1.0;
+  const shadowCount = Math.max(10, Math.floor(totalPx / 5000 * shadowMul));
   for (let i = 0; i < shadowCount; i++) {
     const cx = Math.random() * sunW, cy = Math.random() * sunH;
     const screenX = (cx - offsetPx) * PIXEL / W;
@@ -588,7 +672,7 @@ function preGenerate() {
   }
 
   flowers.length = 0;
-  const spacing2 = 16;
+  const spacing2 = isMobile ? 22 : 16;
   for (let gy = 0; gy < ROWS; gy += spacing2) {
     for (let gx = 0; gx < COLS; gx += spacing2) {
       const x = gx + Math.floor((Math.random() - 0.5) * spacing2);
@@ -620,7 +704,8 @@ function preGenerate() {
   }
 
   starField.length = 0;
-  for (let i = 0; i < 80; i++) {
+  const starCount = isMobile ? 50 : 80;
+  for (let i = 0; i < starCount; i++) {
     starField.push({ x: Math.random(), y: Math.random(), bright: Math.random() > 0.6 });
   }
 }
@@ -1195,9 +1280,21 @@ function screenToPixel(clientX, clientY) {
   return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
+// 粒子上限检查
+function trimParticles() {
+  if (particles.length > MAX_PARTICLES) {
+    particles.splice(0, particles.length - MAX_PARTICLES);
+  }
+}
+function trimRipples() {
+  if (ripples.length > MAX_RIPPLES) {
+    ripples.splice(0, ripples.length - MAX_RIPPLES);
+  }
+}
+
 function spawnGrassBurst(x, y, intensity) {
   const gx = x / PIXEL, gy = y / PIXEL;
-  const count = Math.floor(8 + intensity * 10);
+  const count = Math.floor(5 + intensity * 7);
   const scene = currentScene || SCENES[0];
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -1206,21 +1303,23 @@ function spawnGrassBurst(x, y, intensity) {
       x: gx + Math.cos(angle) * dist, y: gy + Math.sin(angle) * dist,
       height: 5 + Math.floor(Math.random() * 5),
       color: rand(scene.mid), outline: rand(scene.outline),
-      life: 1.0, decay: 0.016 + Math.random() * 0.010,
+      life: 1.0, decay: 0.024 + Math.random() * 0.014,
       swayPhase: Math.random() * Math.PI * 2,
       swayAmp: 0.8 + Math.random() * 1.0,
       bend: 1.0 + Math.random() * 1.8,
       bendX: WIND_DX, bendY: WIND_DY
     });
   }
+  trimParticles();
   ripples.push({
-    x: gx, y: gy, r: 0, maxR: 6 + intensity * 7, life: 1.0, decay: 0.02,
+    x: gx, y: gy, r: 0, maxR: 5 + intensity * 6, life: 1.0, decay: 0.06,
     color: 'rgba(' + scene.windRgb.join(',') + ','
   });
+  trimRipples();
 }
 function spawnWindBurst(x, y, intensity) {
   const gx = x / PIXEL, gy = y / PIXEL;
-  const count = Math.floor(12 + intensity * 12);
+  const count = Math.floor(8 + intensity * 8);
   const scene = currentScene || SCENES[0];
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -1229,21 +1328,23 @@ function spawnWindBurst(x, y, intensity) {
       x: gx + Math.cos(angle) * dist, y: gy + Math.sin(angle) * dist,
       height: 6 + Math.floor(Math.random() * 6),
       color: rand(scene.mid), outline: rand(scene.outline),
-      life: 1.0, decay: 0.009 + Math.random() * 0.007,
+      life: 1.0, decay: 0.018 + Math.random() * 0.012,
       swayPhase: Math.random() * Math.PI * 2,
       swayAmp: 1.0 + Math.random() * 1.3,
       bend: 1.5 + Math.random() * 2.4,
       bendX: WIND_DX, bendY: WIND_DY
     });
   }
+  trimParticles();
   ripples.push({
-    x: gx, y: gy, r: 0, maxR: 12 + intensity * 16, life: 1.0, decay: 0.012,
+    x: gx, y: gy, r: 0, maxR: 10 + intensity * 14, life: 1.0, decay: 0.06,
     color: 'rgba(' + scene.windRgb.join(',') + ','
   });
+  trimRipples();
 }
 function spawnTrailGrass(x, y) {
   const gx = x / PIXEL, gy = y / PIXEL;
-  const count = 4 + Math.floor(Math.random() * 3);
+  const count = 2 + Math.floor(Math.random() * 2);
   const scene = currentScene || SCENES[0];
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -1252,21 +1353,23 @@ function spawnTrailGrass(x, y) {
       x: gx + Math.cos(angle) * dist, y: gy + Math.sin(angle) * dist,
       height: 4 + Math.floor(Math.random() * 4),
       color: rand(scene.mid), outline: rand(scene.outline),
-      life: 0.9, decay: 0.018 + Math.random() * 0.010,
+      life: 0.9, decay: 0.035 + Math.random() * 0.015,
       swayPhase: Math.random() * Math.PI * 2,
       swayAmp: 0.6 + Math.random() * 0.8,
       bend: 0.9 + Math.random() * 1.5,
       bendX: WIND_DX, bendY: WIND_DY
     });
   }
+  trimParticles();
 }
 function spawnTrailRipple(x, y) {
   const gx = x / PIXEL, gy = y / PIXEL;
   const scene = currentScene || SCENES[0];
   ripples.push({
-    x: gx, y: gy, r: 0, maxR: 4 + Math.random() * 3, life: 0.75, decay: 0.04,
+    x: gx, y: gy, r: 0, maxR: 3 + Math.random() * 2, life: 0.75, decay: 0.08,
     color: 'rgba(' + scene.windRgb.join(',') + ','
   });
+  trimRipples();
 }
 let fxTime = 0;
 function renderFx() {
@@ -1274,7 +1377,7 @@ function renderFx() {
   fxCtx.clearRect(0, 0, COLS, ROWS);
   for (let i = ripples.length - 1; i >= 0; i--) {
     const r = ripples[i];
-    r.r += (r.maxR - r.r) * 0.12;
+    r.r += (r.maxR - r.r) * 0.18;
     r.life -= r.decay;
     if (r.life <= 0) { ripples.splice(i, 1); continue; }
     fxCtx.strokeStyle = r.color + (r.life * 0.5) + ')';
@@ -1328,15 +1431,15 @@ function onPressMove(clientX, clientY) {
     const p = screenToPixel(clientX, clientY);
     const ddx = p.x - lastTrailX, ddy = p.y - lastTrailY;
     const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-    const step = 6;
+    const step = 8;
     if (dist > step) {
-      const steps = Math.min(8, Math.floor(dist / step));
+      const steps = Math.min(6, Math.floor(dist / step));
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
         const tx = lastTrailX + ddx * t;
         const ty = lastTrailY + ddy * t;
-        spawnTrailGrass(tx, ty);
-        if (i % 2 === 0) spawnTrailRipple(tx, ty);
+        if (i % 2 === 0) spawnTrailGrass(tx, ty);
+        if (i === steps) spawnTrailRipple(tx, ty);
       }
       lastTrailX = p.x; lastTrailY = p.y;
       if (Math.random() < 0.5) playRustle(1, false);
@@ -1370,36 +1473,80 @@ function onLongPress(px, py) {
         playRandomBird();
       }
     }
-  }, 450);
+  }, 550);
 }
 function stopLongPress() {
   if (windLoop) { clearInterval(windLoop); windLoop = null; }
 }
 
 document.addEventListener('mousedown', (e) => {
-  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel') || e.target.closest('#fullBtn') || e.target.closest('#rotateHint')) return;
   onPressStart(e.clientX, e.clientY);
 });
 document.addEventListener('mousemove', (e) => {
-  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel') || e.target.closest('#fullBtn') || e.target.closest('#rotateHint')) return;
   onPressMove(e.clientX, e.clientY);
 });
 document.addEventListener('mouseup', (e) => {
-  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel') || e.target.closest('#fullBtn') || e.target.closest('#rotateHint')) return;
   onPressEnd();
 });
 document.addEventListener('touchstart', (e) => {
-  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel') || e.target.closest('#fullBtn') || e.target.closest('#rotateHint')) return;
   if (e.touches.length > 0) onPressStart(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
 document.addEventListener('touchmove', (e) => {
-  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel') || e.target.closest('#fullBtn') || e.target.closest('#rotateHint')) return;
   if (e.touches.length > 0) onPressMove(e.touches[0].clientX, e.touches[0].clientY);
 }, { passive: true });
 document.addEventListener('touchend', (e) => {
-  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel') || e.target.closest('#fullBtn') || e.target.closest('#rotateHint')) return;
   onPressEnd();
 }, { passive: true });
+
+// ======================================================
+// 全屏 + 横屏
+// ======================================================
+function isPortrait() {
+  return window.innerHeight > window.innerWidth;
+}
+function tryLandscapeLock() {
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock('landscape').catch(function () {});
+  }
+}
+function enterFullscreen() {
+  const el = document.documentElement;
+  if (el.requestFullscreen) {
+    el.requestFullscreen().then(function () {
+      tryLandscapeLock();
+    }).catch(function () {});
+  } else if (el.webkitRequestFullscreen) {
+    el.webkitRequestFullscreen();
+    tryLandscapeLock();
+  }
+}
+fullBtn.addEventListener('click', function (e) {
+  e.stopPropagation();
+  enterFullscreen();
+});
+goFullBtn.addEventListener('click', function (e) {
+  e.stopPropagation();
+  enterFullscreen();
+  rotateHint.classList.remove('show');
+});
+// 竖屏时显示提示
+function checkOrientation() {
+  if (isPortrait() && isMobile) {
+    rotateHint.classList.add('show');
+  } else {
+    rotateHint.classList.remove('show');
+  }
+}
+window.addEventListener('resize', checkOrientation);
+window.addEventListener('orientationchange', function () {
+  setTimeout(checkOrientation, 300);
+});
 
 // ======================================================
 // 11. 声音
@@ -1705,15 +1852,6 @@ function resizeAll() {
   COLS = Math.ceil(W / PIXEL);
   ROWS = Math.ceil(H / PIXEL);
 
-  // 按屏幕方向切换 SUN 配置
-  const portrait = H > W;
-  const cfg = portrait ? SUN_PORTRAIT : SUN_LANDSCAPE;
-  SUN.cx = cfg.cx;
-  SUN.cy = cfg.cy;
-  SUN.w = cfg.w;
-  SUN.h = cfg.h;
-  SUN.rot = cfg.rot;
-
   [bgCanvas, grassCanvas, waveCanvas, starCanvas, flowerCanvas, fxCanvas].forEach(c => {
     c.width = COLS; c.height = ROWS;
     c.style.width = W + 'px'; c.style.height = H + 'px';
@@ -1730,6 +1868,7 @@ function resizeAll() {
   sceneInfo.textContent = '当前：' + currentScene.name;
   renderScene(currentScene);
   updateScenePanelActive(tlIdx);
+  checkOrientation();
 }
 
 window.addEventListener('resize', () => {
