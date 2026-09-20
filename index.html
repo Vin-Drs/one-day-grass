@@ -1086,12 +1086,12 @@ function renderOneSign(sign) {
   signTmpCtx.textBaseline = 'bottom';
   signTmpCtx.fillStyle = '#ffffff';
   signTmpCtx.textAlign = (sign.align === 'left') ? 'left' : 'right';
-  // vinc 在左、Dr.S 在右，右对齐时留出一点间距
+   // vinc 在左、Dr.S 在右，右对齐时留出一点间距
   let x;
   if (sign.align === 'left') {
     x = pad;
   } else if (sign.text === 'vinc') {
-    x = W - pad - 52;   // vinc 往左挪 52px，避开 Dr.S
+    x = W - pad - 120;   // 距离从 52 拉大到 120，拉开两段签名
   } else {
     x = W - pad;
   }
