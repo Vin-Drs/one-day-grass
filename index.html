@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>一日之草</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #1a1a1a;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: monospace;
+  }
+  #scene { position: absolute; inset: 0; overflow: hidden; }
+  .layer {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    pointer-events: none;
+    background: transparent;
+  }
+  #bgCanvas { z-index: 1; }
+  #glowWrap {
+    position: absolute; inset: 0; z-index: 2;
+    pointer-events: none; overflow: hidden;
+    mix-blend-mode: screen; opacity: 0.65;
+    transition: opacity 0.6s ease;
+  }
+  #glowLayer {
+    position: absolute; left: -60px; top: -60px;
+    filter: blur(40px);
+    will-change: transform; pointer-events: none;
+  }
+  #sunWrap {
+    position: absolute; inset: 0; z-index: 3;
+    pointer-events: none; overflow: hidden;
+    mix-blend-mode: screen; opacity: 0.85;
+    transition: opacity 0.6s ease;
+  }
+  #sunLayer {
+    position: absolute; left: -30px; top: -30px;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    will-change: transform;
+  }
+  #grassCanvas { z-index: 4; }
+  #waveCanvas { z-index: 5; opacity: 0; transition: opacity 0.5s ease; }
+  #waveCanvas.active { opacity: 1; }
+  #starCanvas { z-index: 6; }
+  #flowerCanvas { z-index: 7; }
+  #fxCanvas { z-index: 8; }
+  #transitionCanvas { z-index: 9; pointer-events: none; }
+  #vignette {
+    position: absolute; inset: 0; z-index: 20;
+    pointer-events: none;
+    transition: background 0.8s ease;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0,0,0,0) 42%,
+      rgba(0,0,0,0.25) 75%,
+      rgba(0,0,0,0.5) 100%);
+  }
+  .speaker {
+    position: fixed; top: 6px; right: 54px;
+    width: 40px; height: 40px; z-index: 50;
+    cursor: pointer; opacity: 0.8;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .speaker:active { transform: scale(0.9); }
+  .speaker svg { width: 100%; height: 100%; }
+  .speaker.on { opacity: 1; filter: drop-shadow(0 0 6px rgba(255,240,150,0.9)); }
+  .hint {
+    position: fixed; left: 8px; bottom: 8px;
+    color: rgba(255,255,255,0.45); font-size: 11px;
+    letter-spacing: 1px; z-index: 40; pointer-events: none;
+  }
+  #sceneInfo {
+    position: fixed; top: 16px; left: 12px;
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    letter-spacing: 1px;
+    z-index: 100;
+    pointer-events: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  }
+  #scenePanel {
+    position: fixed; top: 6px; right: 100px;
+    display: flex; flex-direction: row;
+    gap: 4px;
+    z-index: 100;
+    user-select: none; -webkit-user-select: none;
+  }
+  .sceneBtn {
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.28);
+    color: rgba(255,255,255,0.75);
+    font-family: monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+  }
+  .sceneBtn:hover { background: rgba(255,255,255,0.20); }
+  .sceneBtn:active { transform: scale(0.94); }
+  .sceneBtn.active {
+    background: rgba(255,255,255,0.32);
+    color: #fff;
+    border-color: rgba(255,255,255,0.7);
+  }
+  @media (max-width: 720px) {
+    #scenePanel {
+      top: auto; bottom: 28px; right: 6px;
+      flex-wrap: wrap; max-width: 200px;
+      justify-content: flex-end;
+    }
+    .sceneBtn { font-size: 10px; padding: 5px 7px; }
+  }
+</style>
+</head>
+<body>
+  <div id="scene">
+    <canvas id="bgCanvas" class="layer"></canvas>
+    <div id="glowWrap"><canvas id="glowLayer"></canvas></div>
+    <div id="sunWrap"><canvas id="sunLayer"></canvas></div>
+    <canvas id="grassCanvas" class="layer"></canvas>
+    <canvas id="waveCanvas" class="layer"></canvas>
+    <canvas id="starCanvas" class="layer"></canvas>
+    <canvas id="flowerCanvas" class="layer"></canvas>
+    <canvas id="fxCanvas" class="layer"></canvas>
+    <canvas id="transitionCanvas" class="layer"></canvas>
+    <div id="vignette"></div>
+  </div>
+
+  <div class="speaker" id="speaker" title="开关声音">
+    <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="6" width="2" height="4" fill="#e8f5c8"/>
+      <rect x="4" y="5" width="2" height="6" fill="#e8f5c8"/>
+      <rect x="6" y="3" width="2" height="10" fill="#e8f5c8"/>
+      <rect x="8" y="4" width="1" height="8" fill="#c8e89a"/>
+      <g id="waves" opacity="0">
+        <rect x="10" y="5" width="1" height="2" fill="#a8e063"/>
+        <rect x="10" y="9" width="1" height="2" fill="#a8e063"/>
+        <rect x="12" y="3" width="1" height="2" fill="#a8e063"/>
+        <rect x="12" y="11" width="1" height="2" fill="#a8e063"/>
+        <rect x="12" y="6" width="1" height="4" fill="#a8e063"/>
+      </g>
+      <g id="muteLine" opacity="1">
+        <rect x="10" y="4" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="11" y="5" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="12" y="6" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="13" y="7" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="14" y="8" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="13" y="9" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="12" y="10" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="11" y="11" width="1" height="1" fill="#a0a0a0"/>
+        <rect x="10" y="12" width="1" height="1" fill="#a0a0a0"/>
+      </g>
+    </svg>
+  </div>
+
+  <div id="scenePanel">
+    <button class="sceneBtn" data-tl="0">清晨</button>
+    <button class="sceneBtn" data-tl="1">草地</button>
+    <button class="sceneBtn" data-tl="2">麦子</button>
+    <button class="sceneBtn" data-tl="3">枯黄</button>
+    <button class="sceneBtn" data-tl="4">草地午后</button>
+    <button class="sceneBtn" data-tl="5">下午草地</button>
+    <button class="sceneBtn" data-tl="6">夜间</button>
+  </div>
+
+  <div id="sceneInfo">当前：清晨</div>
+  <div class="hint">轻点 · 沙沙　长按 · 拨草惊虫　滑动 · 一路麦浪</div>
+
+<script type="text/plain" id="mainScript">
+// ======================================================
+// 0. 基础
+// ======================================================
+const bgCanvas = document.getElementById('bgCanvas');
+const glowLayer = document.getElementById('glowLayer');
+const sunLayer = document.getElementById('sunLayer');
+const grassCanvas = document.getElementById('grassCanvas');
+const waveCanvas = document.getElementById('waveCanvas');
+const starCanvas = document.getElementById('starCanvas');
+const flowerCanvas = document.getElementById('flowerCanvas');
+const fxCanvas = document.getElementById('fxCanvas');
+const transitionCanvas = document.getElementById('transitionCanvas');
+const vignette = document.getElementById('vignette');
+const glowWrap = document.getElementById('glowWrap');
+const sunWrap = document.getElementById('sunWrap');
+const sceneInfo = document.getElementById('sceneInfo');
+
+const bgCtx = bgCanvas.getContext('2d');
+const glowCtx = glowLayer.getContext('2d');
+const sunCtx = sunLayer.getContext('2d');
+const grassCtx = grassCanvas.getContext('2d');
+const waveCtx = waveCanvas.getContext('2d');
+const starCtx = starCanvas.getContext('2d');
+const flowerCtx = flowerCanvas.getContext('2d');
+const fxCtx = fxCanvas.getContext('2d');
+const transCtx = transitionCanvas.getContext('2d');
+
+const PIXEL = 3;
+let W = 0, H = 0, COLS = 0, ROWS = 0;
+
+const SUN = { cx: 0.42, cy: 0.44, w: 0.50, h: 0.65, rot: -Math.PI / 4 };
+const WIND_ANGLE = Math.PI * 0.23;
+const WIND_DX = Math.cos(WIND_ANGLE);
+const WIND_DY = Math.sin(WIND_ANGLE);
+
+// ======================================================
+// 1. 场景配色
+// ======================================================
+const SCENES = [
+  {
+    name: '清晨', startH: 2, endH: 5,
+    dark:    ['#303e46','#36444c','#3c4a52','#425058','#48565e'],
+    mid:     ['#5a7a4a','#638456','#6c8e62','#75986e','#7ea27a','#87ac86','#90b692','#99c09e'],
+    sun:     ['#a8c890','#b0ce9a','#b8d4a4','#c0daae','#c8e0b8','#d0e6c2','#d8eccc','#e0f2d6'],
+    outline: ['#1c2a32','#222e36','#28323a','#2e363e'],
+    bright:  ['#e8f0d8','#ecf0dc','#f0f0e0','#f4f0e4'],
+    lightPixels: [
+      'rgba(228,236,214,0.68)','rgba(232,240,220,0.66)','rgba(236,244,226,0.64)',
+      'rgba(240,248,232,0.62)','rgba(244,250,238,0.60)','rgba(248,252,244,0.58)'
+    ],
+    lightShadow: [
+      'rgba(140,170,140,0.36)','rgba(148,178,148,0.34)','rgba(156,186,156,0.32)'
+    ],
+    bgBase: '#5a7a4a',
+    glow: ['rgba(220,228,200,0.5)','rgba(200,210,180,0.28)','rgba(170,190,160,0.10)','rgba(170,190,160,0)'],
+    glowOpacity: 0.45, sunOpacity: 0.75,
+    stars: 10, starTop: 0.35, starA: '#dce8dc', starB: '#c8d8d0',
+    windRgb: [220,230,200],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(20,35,45,0.32) 70%, rgba(10,20,28,0.65) 100%)',
+    windFreq: 520, windGain: 0.16, gustPeak: 0.38,
+    birdDelayMin: 6000, birdDelayRange: 8000,
+    cricketDelayMin: 35000, cricketDelayRange: 35000
+  },
+  {
+    name: '草地', startH: 5, endH: 8,
+    dark:    ['#1e3f0c','#264a10','#2e5514','#386018','#426b1c'],
+    mid:     ['#426b1c','#4c7620','#568124','#608c28','#6a972c','#74a230','#7ead34','#88b838','#92c33c','#9cce40'],
+    sun:     ['#7ea02a','#8aaa30','#96b436','#a2be3c','#aec842','#baca48','#c6d44e','#d2de54','#dee85a','#eaf260','#f0f870','#f8ff80'],
+    outline: ['#143208','#1a3c0a','#204a10','#264f12'],
+    bright:  ['#d8e860','#e8f070','#f0f880','#f8ff90','#ffffa0','#ffffb8'],
+    lightPixels: [
+      'rgba(200,232,100,0.72)','rgba(216,244,112,0.70)','rgba(228,252,120,0.68)',
+      'rgba(232,255,128,0.66)','rgba(240,255,136,0.64)','rgba(244,255,144,0.62)',
+      'rgba(248,255,152,0.60)','rgba(252,255,160,0.58)'
+    ],
+    lightShadow: [
+      'rgba(122,170,60,0.42)','rgba(136,180,68,0.40)','rgba(150,190,76,0.38)','rgba(164,200,84,0.36)'
+    ],
+    bgBase: '#2a4e14',
+    glow: ['rgba(255,250,180,0.55)','rgba(240,245,160,0.35)','rgba(220,230,140,0.15)','rgba(220,230,140,0)'],
+    glowOpacity: 0.65, sunOpacity: 0.95,
+    stars: 8, starTop: 1, starA: '#ffffe0', starB: '#f0ffb0',
+    windRgb: [232,255,120],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 42%, rgba(0,0,0,0.25) 75%, rgba(0,0,0,0.5) 100%)',
+    windFreq: 420, windGain: 0.10, gustPeak: 0.32,
+    birdDelayMin: 10000, birdDelayRange: 15000,
+    cricketDelayMin: 10000, cricketDelayRange: 12000
+  },
+  {
+    name: '麦子', startH: 8, endH: 11,
+    dark:    ['#8a5418','#96601c','#a26c20','#ae7824','#ba8428'],
+    mid:     ['#b8942c','#c2a030','#cca834','#d6b038','#e0b83c','#e8c240','#ecc848','#f0d050'],
+    sun:     ['#e8da58','#ecdf60','#f0e468','#f4e870','#f6ec78','#f8f080','#faf488','#fcf890'],
+    outline: ['#6e4210','#7a4a12','#865214','#925a16'],
+    bright:  ['#fff4b0','#fff6b8','#fff8c0','#fffac8'],
+    lightPixels: [
+      'rgba(255,244,190,0.75)','rgba(255,246,200,0.73)','rgba(255,248,210,0.71)',
+      'rgba(255,250,218,0.69)','rgba(255,252,226,0.67)','rgba(255,253,234,0.65)'
+    ],
+    lightShadow: [
+      'rgba(220,200,130,0.42)','rgba(228,208,140,0.40)','rgba(236,216,150,0.38)'
+    ],
+    bgBase: '#b8a040',
+    glow: ['rgba(255,240,190,0.55)','rgba(255,225,150,0.32)','rgba(240,200,110,0.12)','rgba(240,200,110,0)'],
+    glowOpacity: 0.55, sunOpacity: 0.95,
+    stars: 8, starTop: 1, starA: '#fffce0', starB: '#fff4b8',
+    windRgb: [255,240,140],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(70,45,15,0.28) 72%, rgba(45,25,5,0.58) 100%)',
+    windFreq: 480, windGain: 0.22, gustPeak: 0.55,
+    birdDelayMin: 15000, birdDelayRange: 20000,
+    cricketDelayMin: 25000, cricketDelayRange: 25000
+  },
+  {
+    name: '枯黄', startH: 11, endH: 13.5,
+    dark:    ['#4a3a0e','#55430c','#5e4c0a','#68540c','#725c0e'],
+    mid:     ['#725c0e','#7e680f','#8a7410','#968011','#a28c12','#ae9813','#b8a414','#c2b015','#ccbc16','#d6c818'],
+    sun:     ['#d6c818','#dccd1e','#e2d225','#e8d72c','#eedc33','#f2e03a','#f6e441','#f8e84a','#faea52','#fcec5a'],
+    outline: ['#2a2006','#322607','#3a2c08','#42320a'],
+    bright:  ['#f8f090','#faf498','#fcf8a0','#fefaA8','#fffab0','#fffbb8'],
+    lightPixels: [
+      'rgba(255,235,150,0.72)','rgba(255,240,162,0.70)','rgba(255,244,174,0.68)',
+      'rgba(255,246,186,0.66)','rgba(255,248,198,0.64)','rgba(255,250,210,0.62)',
+      'rgba(255,252,222,0.60)','rgba(255,254,234,0.58)'
+    ],
+    lightShadow: [
+      'rgba(200,180,110,0.42)','rgba(212,190,120,0.40)','rgba(224,200,130,0.38)','rgba(236,210,140,0.36)'
+    ],
+    bgBase: '#6a5610',
+    glow: ['rgba(255,220,130,0.7)','rgba(255,190,90,0.45)','rgba(240,150,60,0.2)','rgba(240,150,60,0)'],
+    glowOpacity: 0.75, sunOpacity: 0.95,
+    stars: 8, starTop: 1, starA: '#fff8d8', starB: '#ffeaa0',
+    windRgb: [255,240,140],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(70,40,8,0.28) 72%, rgba(50,25,4,0.55) 100%)',
+    windFreq: 420, windGain: 0.10, gustPeak: 0.32,
+    birdDelayMin: 10000, birdDelayRange: 15000,
+    cricketDelayMin: 10000, cricketDelayRange: 12000
+  },
+  {
+    name: '下午的草地', startH: 15.5, endH: 20,
+    dark:    ['#2a3a0a','#324508','#3a4e0a','#42580c','#4a6210'],
+    mid:     ['#4a6210','#556d12','#607814','#6a8418','#74901c','#7e9c20','#88a824','#92b428','#9cc02c','#a6cc30'],
+    sun:     ['#a6cc30','#b0d438','#baca3e','#c4dc44','#cee44a','#d8ea50','#e2f056','#eaf260','#f0f870','#f8ff80'],
+    outline: ['#1a2408','#1e2a0a','#22300c','#263510'],
+    bright:  ['#e8e070','#f0e878','#f4f080','#f8f888','#fcff90','#ffffa0'],
+    lightPixels: [
+      'rgba(255,220,110,0.72)','rgba(255,228,120,0.70)','rgba(255,236,130,0.68)',
+      'rgba(255,242,140,0.66)','rgba(255,248,150,0.64)','rgba(255,252,160,0.62)',
+      'rgba(255,255,170,0.60)','rgba(255,255,185,0.58)'
+    ],
+    lightShadow: [
+      'rgba(180,190,90,0.42)','rgba(190,200,96,0.40)','rgba(200,210,104,0.38)','rgba(210,220,112,0.36)'
+    ],
+    bgBase: '#3a4a10',
+    glow: ['rgba(255,210,130,0.65)','rgba(255,180,100,0.42)','rgba(240,150,80,0.18)','rgba(240,150,80,0)'],
+    glowOpacity: 0.75, sunOpacity: 0.95,
+    stars: 8, starTop: 1, starA: '#fff8d0', starB: '#ffeaa0',
+    windRgb: [255,230,120],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(40,15,0,0.30) 72%, rgba(25,8,0,0.55) 100%)',
+    windFreq: 420, windGain: 0.10, gustPeak: 0.32,
+    birdDelayMin: 10000, birdDelayRange: 15000,
+    cricketDelayMin: 10000, cricketDelayRange: 12000
+  },
+  {
+    name: '夜间', startH: 20, endH: 2,
+    dark:    ['#1a1838','#201d44','#262250','#2c275c','#322c68'],
+    mid:     ['#2a3070','#323a7c','#3a4488','#424e94','#4a58a0','#5262ac','#5a6cb8','#6276c4'],
+    sun:     ['#7a8ad0','#8494d8','#8e9ee0','#98a8e8','#a2b2f0','#acbcf8','#b6c6ff','#c0d0ff'],
+    outline: ['#0e0c24','#141130','#1a163c','#201b48'],
+    bright:  ['#dce8ff','#e2ecff','#e8f0ff','#eef4ff'],
+    lightPixels: [
+      'rgba(220,230,255,0.70)','rgba(224,234,255,0.68)','rgba(228,238,255,0.66)',
+      'rgba(232,242,255,0.64)','rgba(236,246,255,0.62)','rgba(240,250,255,0.60)'
+    ],
+    lightShadow: [
+      'rgba(120,140,200,0.40)','rgba(130,148,208,0.38)','rgba(140,158,216,0.36)'
+    ],
+    bgBase: '#3a4488',
+    glow: ['rgba(210,225,255,0.55)','rgba(170,195,250,0.32)','rgba(120,150,220,0.12)','rgba(120,150,220,0)'],
+    glowOpacity: 0.55, sunOpacity: 0.85,
+    stars: 60, starTop: 0.75, starA: '#ffffff', starB: '#c0d0ff',
+    windRgb: [180,210,255],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(5,8,20,0.35) 68%, rgba(2,4,12,0.72) 100%)',
+    windFreq: 360, windGain: 0.18, gustPeak: 0.42,
+    birdDelayMin: 40000, birdDelayRange: 40000,
+    cricketDelayMin: 8000, cricketDelayRange: 15000
+  }
+];
+
+const TIMELINE = [
+  { idx: 0, startH: 2,    endH: 5    },
+  { idx: 1, startH: 5,    endH: 8    },
+  { idx: 2, startH: 8,    endH: 11   },
+  { idx: 3, startH: 11,   endH: 13.5 },
+  { idx: 1, startH: 13.5, endH: 15.5 },
+  { idx: 4, startH: 15.5, endH: 20   },
+  { idx: 5, startH: 20,   endH: 2    }
+];
+
+function findTimelineIdx(h) {
+  for (let i = 0; i < TIMELINE.length; i++) {
+    const t = TIMELINE[i];
+    if (t.startH < t.endH) {
+      if (h >= t.startH && h < t.endH) return i;
+    } else {
+      if (h >= t.startH || h < t.endH) return i;
+    }
+  }
+  return 0;
+}
+
+// ======================================================
+// 2. 工具
+// ======================================================
+function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function lightMask(px, py) {
+  const dx = px - SUN.cx, dy = py - SUN.cy;
+  const cos = Math.cos(-SUN.rot), sin = Math.sin(-SUN.rot);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  const nx = lx / (SUN.w / 2);
+  const ny = ly / (SUN.h / 2);
+  const d = Math.max(Math.abs(nx), Math.abs(ny));
+  if (d <= 0.82) return 1;
+  if (d >= 1.05) return 0;
+  const t = (d - 0.82) / (1.05 - 0.82);
+  const s = t * t * (3 - 2 * t);
+  return 1 - s;
+}
+
+function contrastBoost(px, py) {
+  const dx = px - SUN.cx, dy = py - SUN.cy;
+  const cos = Math.cos(-SUN.rot), sin = Math.sin(-SUN.rot);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  const nx = lx / (SUN.w / 2);
+  const ny = ly / (SUN.h / 2);
+  const d = Math.max(Math.abs(nx), Math.abs(ny));
+  if (d <= 0.6) return 1;
+  if (d >= 1.4) return 0;
+  const t = (d - 0.6) / (1.4 - 0.6);
+  const s = t * t * (3 - 2 * t);
+  return 1 - s;
+}
+
+function hash2(x, y, s) {
+  let h = x * 374761393 + y * 668265263 + s * 2246822519;
+  h = (h ^ (h >> 13)) * 1274126177;
+  h = h ^ (h >> 16);
+  return (h >>> 0) / 4294967295;
+}
+function smoothNoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const v00 = hash2(xi, yi, s), v10 = hash2(xi + 1, yi, s);
+  const v01 = hash2(xi, yi + 1, s), v11 = hash2(xi + 1, yi + 1, s);
+  const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf);
+  const a = v00 + (v10 - v00) * sx;
+  const b = v01 + (v11 - v01) * sx;
+  return a + (b - a) * sy;
+}
+function valueNoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const v00 = hash2(xi, yi, 0), v10 = hash2(xi + 1, yi, 0);
+  const v01 = hash2(xi, yi + 1, 0), v11 = hash2(xi + 1, yi + 1, 0);
+  const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf);
+  const a = v00 + (v10 - v00) * sx;
+  const b = v01 + (v11 - v01) * sx;
+  return a + (b - a) * sy;
+}
+
+function brightenHex(hex, t) {
+  const h = hex.replace('#', '');
+  let r = parseInt(h.substring(0, 2), 16);
+  let g = parseInt(h.substring(2, 4), 16);
+  let b = parseInt(h.substring(4, 6), 16);
+  const k = 1 - t * 0.55;
+  r = 255 - (255 - r) * k;
+  g = 255 - (255 - g) * k;
+  b = 255 - (255 - b) * k;
+  const lum = (r + g + b) / 3;
+  const satBoost = 1 + t * 0.35;
+  r = lum + (r - lum) * satBoost;
+  g = lum + (g - lum) * satBoost;
+  b = lum + (b - lum) * satBoost;
+  r = Math.max(0, Math.min(255, Math.round(r)));
+  g = Math.max(0, Math.min(255, Math.round(g)));
+  b = Math.max(0, Math.min(255, Math.round(b)));
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
+function liftDark(hex, t) {
+  const h = hex.replace('#', '');
+  let r = parseInt(h.substring(0, 2), 16);
+  let g = parseInt(h.substring(2, 4), 16);
+  let b = parseInt(h.substring(4, 6), 16);
+  const lift = t * 40;
+  r = r + (r < 80 ? lift : lift * 0.3);
+  g = g + (g < 70 ? lift : lift * 0.3);
+  b = b + (b < 30 ? lift : lift * 0.3);
+  r = Math.max(0, Math.min(255, Math.round(r)));
+  g = Math.max(0, Math.min(255, Math.round(g)));
+  b = Math.max(0, Math.min(255, Math.round(b)));
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
+function rgbToHex(rgb) {
+  const m = rgb.match(/\d+/g);
+  if (!m) return rgb;
+  const r = parseInt(m[0]), g = parseInt(m[1]), b = parseInt(m[2]);
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// ======================================================
+// 3. 全局状态
+// ======================================================
+let currentScene = null;
+let currentTimelineIdx = 0;
+let isTransitioning = false;
+let transitionT = 0;
+// 三段：铺满 3 秒 / 停留 3 秒（签名淡入淡出）/ 退走 3 秒，共 9 秒
+const TRANSITION_DURATION = 12.0;
+const TRANSITION_FILL_RATIO = 3.0 / 9.0;
+const TRANSITION_HOLD_RATIO = 3.0 / 9.0;
+let lastTickTime = performance.now();
+
+const bladeData = [];
+const lightPixels = [];
+const lightShadows = [];
+const flowers = [];
+const starField = [];
+const particles = [];
+const ripples = [];
+
+let gustActive = false, gustStart = 0, gustDuration = 0;
+let currentWaveFront = -1, currentGustEnv = 0, currentElapsed = 0;
+
+let transitionNewScene = null;
+let transitionSwapped = false;
+
+// ======================================================
+// 黑幕角落的两个署名
+//   vinc   —— 左下角，蓝色
+//   Dr.S   —— 右下角，冷灰蓝
+// ======================================================
+const SIGN_VINC = { text: 'vinc', color: '#0010ff', align: 'left'  };
+const SIGN_DRS  = { text: 'Dr.S', color: '#8fa8c8', align: 'right' };
+
+const signVincCanvas = document.createElement('canvas');
+const signDrSCanvas  = document.createElement('canvas');
+
+// ======================================================
+// 4. 数据预生成
+// ======================================================
+function preGenerate() {
+  bladeData.length = 0;
+  const spacing = 4;
+  for (let gy = 0; gy < ROWS; gy += spacing) {
+    for (let gx = 0; gx < COLS; gx += spacing) {
+      const x = gx + Math.floor((Math.random() - 0.5) * spacing);
+      const y = gy + Math.floor((Math.random() - 0.5) * spacing);
+      if (x < 1 || x >= COLS - 1 || y < 2 || y >= ROWS) continue;
+      const px = x / COLS, py = y / ROWS;
+      const m = lightMask(px, py);
+      if (m > 0.5 && Math.random() < 0.28) continue;
+      const height = 5 + Math.floor(Math.random() * 6);
+      const bendAmount = 0.7 + Math.random() * 2.2;
+      bladeData.push({
+        x, y, height, bendAmount,
+        phase: Math.random() * Math.PI * 2,
+        zone: m > 0.5 ? 'sun' : (m > 0.2 ? 'mid' : (Math.random() > 0.45 ? 'mid' : 'dark'))
+      });
+    }
+  }
+
+  lightPixels.length = 0;
+  lightShadows.length = 0;
+  const sunW = Math.ceil((W + 60) / PIXEL);
+  const sunH = Math.ceil((H + 60) / PIXEL);
+  const offsetPx = 30 / PIXEL;
+  for (let y = 0; y < sunH; y++) {
+    for (let x = 0; x < sunW; x++) {
+      const screenX = (x - offsetPx) * PIXEL / W;
+      const screenY = (y - offsetPx) * PIXEL / H;
+      const m = lightMask(screenX, screenY);
+      if (m < 0.05) continue;
+      const n = valueNoise(x * 0.15, y * 0.15);
+      const density = 0.2 + m * 0.45 + n * 0.1;
+      if (Math.random() > density) continue;
+      const t = m * 0.7 + n * 0.3;
+      lightPixels.push({ x, y, t, phase: Math.random() * Math.PI * 2 });
+    }
+  }
+
+  const totalPx = sunW * sunH;
+  const shadowCount = Math.max(20, Math.floor(totalPx / 5000));
+  for (let i = 0; i < shadowCount; i++) {
+    const cx = Math.random() * sunW, cy = Math.random() * sunH;
+    const screenX = (cx - offsetPx) * PIXEL / W;
+    const screenY = (cy - offsetPx) * PIXEL / H;
+    const m = lightMask(screenX, screenY);
+    if (m < 0.3) continue;
+    lightShadows.push({
+      nx: screenX, ny: screenY, x: cx, y: cy,
+      size: 2 + Math.floor(Math.random() * 4),
+      n: Math.random(),
+      phase: Math.random() * Math.PI * 2,
+      bend: 0.6 + Math.random() * 1.6
+    });
+  }
+
+  flowers.length = 0;
+  const spacing2 = 16;
+  for (let gy = 0; gy < ROWS; gy += spacing2) {
+    for (let gx = 0; gx < COLS; gx += spacing2) {
+      const x = gx + Math.floor((Math.random() - 0.5) * spacing2);
+      const y = gy + Math.floor((Math.random() - 0.5) * spacing2);
+      if (x < 1 || x >= COLS - 1 || y < 2 || y >= ROWS) continue;
+      const nx = x / COLS, ny = y / ROWS;
+      const m = lightMask(nx, ny);
+      if (m < 0.3) continue;
+      let zoneWeight = m < 0.55 ? 0.35 : (m < 0.75 ? 0.8 : 1.0);
+      const n1 = smoothNoise(nx * 3.5, ny * 3.5, 31);
+      const n2 = smoothNoise(nx * 9, ny * 9, 32);
+      const n3 = smoothNoise(nx * 22, ny * 22, 33);
+      let d = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+      d = d * d;
+      if (Math.random() > d * zoneWeight * 0.8) continue;
+      const fx = x + (Math.random() - 0.5) * 4;
+      const fy = y + (Math.random() - 0.5) * 4;
+      const m2 = lightMask(fx / COLS, fy / ROWS);
+      if (m2 < 0.25) continue;
+      flowers.push({
+        x: fx, y: fy, m: m2,
+        phase: Math.random() * Math.PI * 2,
+        gustOffset: 2.0 + Math.random() * 2.5,
+        gustResponse: 0.8 + Math.random() * 0.4,
+        offsetState: 0,
+        shakePhase: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  starField.length = 0;
+  for (let i = 0; i < 80; i++) {
+    starField.push({ x: Math.random(), y: Math.random(), bright: Math.random() > 0.6 });
+  }
+}
+
+// ======================================================
+// 5. 各层渲染
+// ======================================================
+function renderBgTo(ctx, scene, targetW, targetH) {
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, targetW, targetH);
+  ctx.fillStyle = scene.bgBase;
+  ctx.fillRect(0, 0, COLS, ROWS);
+  const dark = scene.dark, mid = scene.mid;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const px = x / COLS, py = y / ROWS;
+      const n = valueNoise(x * 0.12, y * 0.12);
+      const r = Math.random();
+      let colorHex;
+      if (n > 0.5) colorHex = rand(mid);
+      else colorHex = rand(dark);
+      if (r > 0.9) colorHex = rand(mid);
+      const cb = contrastBoost(px, py);
+      if (cb > 0.02) {
+        let c = liftDark(colorHex, cb);
+        if (n > 0.4) c = brightenHex(c.startsWith('rgb') ? rgbToHex(c) : c, cb * 0.5);
+        ctx.fillStyle = c;
+      } else {
+        ctx.fillStyle = colorHex;
+      }
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+function renderGrassTo(ctx, scene) {
+  ctx.clearRect(0, 0, COLS, ROWS);
+  for (let i = 0; i < bladeData.length; i++) {
+    const b = bladeData[i];
+    let color;
+    const r = Math.random();
+    if (b.zone === 'sun') color = r > 0.45 ? rand(scene.sun) : rand(scene.mid);
+    else if (b.zone === 'mid') color = r > 0.55 ? rand(scene.mid) : rand(scene.dark);
+    else color = rand(scene.dark);
+    if (r < 0.08) color = rand(scene.dark);
+    drawBlade(ctx, b, color, rand(scene.outline), rand(scene.bright), 1, false);
+  }
+}
+
+function drawBlade(ctx, b, color, outlineColor, brightColor, bendMul, bright) {
+  const x = b.x, y = b.y;
+  const bendAmount = b.bendAmount * bendMul;
+  const bendX = WIND_DX * bendAmount;
+  const bendY = WIND_DY * bendAmount;
+  const height = b.height;
+  const c = bright ? brightColor : color;
+  for (let h = 0; h < height; h++) {
+    const t = h / height;
+    const offsetX = Math.round(bendX * t * t);
+    const offsetY = -h + Math.round(bendY * t * t);
+    const cx = x + offsetX, cy = y + offsetY;
+    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) break;
+    ctx.fillStyle = outlineColor;
+    ctx.fillRect(cx, cy, 1, 1);
+    ctx.fillStyle = c;
+    ctx.fillRect(cx + 1, cy, 1, 1);
+  }
+}
+
+function pickLightPixel(scene, t) {
+  const arr = scene.lightPixels;
+  if (t > 0.75) return arr[arr.length - 1];
+  if (t > 0.45) return arr[Math.floor(arr.length * 0.5)];
+  return arr[0];
+}
+function pickLightShadow(scene, n) {
+  const arr = scene.lightShadow;
+  return arr[Math.floor(n * arr.length)];
+}
+
+function renderSunLayerTo(ctx, scene, forTransition) {
+  const sunW = Math.ceil((W + 60) / PIXEL);
+  const sunH = Math.ceil((H + 60) / PIXEL);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, sunW, sunH);
+  const gustInfo = getGustInfo();
+  const applyGust = gustInfo.active && !forTransition && !isTransitioning;
+  for (let i = 0; i < lightPixels.length; i++) {
+    const p = lightPixels[i];
+    let dx = 0, dy = 0;
+    if (applyGust) {
+      const nx = p.x / sunW, ny = p.y / sunH;
+      const proj = nx * WIND_DX + ny * WIND_DY;
+      const local = Math.exp(-Math.pow((proj - gustInfo.waveFront) / 0.16, 2));
+      const wob = Math.sin(gustInfo.elapsed * 8 + p.phase) * 0.8;
+      dx = WIND_DX * 1.2 * local * gustInfo.env + wob * local;
+      dy = WIND_DY * 0.6 * local * gustInfo.env;
+    }
+    ctx.fillStyle = pickLightPixel(scene, p.t);
+    ctx.fillRect(Math.round(p.x + dx), Math.round(p.y + dy), 1, 1);
+  }
+  for (let i = 0; i < lightShadows.length; i++) {
+    const s = lightShadows[i];
+    let offX = 0, offY = 0;
+    if (applyGust) {
+      const n1 = smoothNoise(s.nx * 5, s.ny * 5, 21) - 0.5;
+      const n2 = smoothNoise(s.nx * 14, s.ny * 14, 22) - 0.5;
+      const n4 = smoothNoise(s.nx * 2.2, s.ny * 2.2, 24) - 0.5;
+      const frontOffset = n1 * 0.26 + n2 * 0.14 + n4 * 0.20;
+      const proj = s.nx * WIND_DX + s.ny * WIND_DY;
+      const localFront = gustInfo.waveFront + frontOffset;
+      const d = proj - localFront;
+      const width = 0.16;
+      const local = Math.exp(-(d * d) / (width * width));
+      const amp = local * gustInfo.env;
+      const phase = d * 10 + s.phase + hash2(Math.round(s.x), Math.round(s.y), 42) * 6;
+      const bendFactor = Math.max(0, Math.sin(phase) * 0.5 + 0.5) * amp;
+      if (bendFactor > 0.02) {
+        offX = WIND_DX * s.bend * bendFactor * 2.4;
+        offY = WIND_DY * s.bend * bendFactor * 1.2;
+      }
+    }
+    ctx.fillStyle = pickLightShadow(scene, s.n);
+    ctx.fillRect(Math.round(s.x + offX), Math.round(s.y + offY), s.size, s.size);
+  }
+}
+
+function renderGlowTo(scene) {
+  const gw = Math.max(64, Math.floor((W + 120) / 8));
+  const gh = Math.max(64, Math.floor((H + 120) / 8));
+  glowLayer.width = gw; glowLayer.height = gh;
+  glowLayer.style.width = (W + 120) + 'px';
+  glowLayer.style.height = (H + 120) + 'px';
+  glowCtx.clearRect(0, 0, gw, gh);
+  const gx = SUN.cx * gw, gy = SUN.cy * gh;
+  const w = SUN.w * gw * 0.7, h = SUN.h * gh * 0.7;
+  glowCtx.save();
+  glowCtx.translate(gx, gy);
+  glowCtx.rotate(SUN.rot);
+  const grad = glowCtx.createRadialGradient(0, 0, 0, 0, 0, Math.max(w, h) * 0.7);
+  grad.addColorStop(0, scene.glow[0]);
+  grad.addColorStop(0.4, scene.glow[1]);
+  grad.addColorStop(0.75, scene.glow[2]);
+  grad.addColorStop(1, scene.glow[3]);
+  glowCtx.fillStyle = grad;
+  glowCtx.fillRect(-w * 1.6, -h * 1.6, w * 3.2, h * 3.2);
+  glowCtx.restore();
+  glowWrap.style.opacity = scene.glowOpacity;
+}
+
+function renderStarsTo(scene) {
+  starCanvas.width = COLS; starCanvas.height = ROWS;
+  starCanvas.style.width = W + 'px'; starCanvas.style.height = H + 'px';
+  renderStarsToCanvas(starCtx, scene, COLS, ROWS);
+}
+
+function renderStarsToCanvas(ctx, scene, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  if (scene.stars > 20) {
+    for (let i = 0; i < scene.stars; i++) {
+      const s = starField[i % starField.length];
+      const x = Math.round(s.x * w);
+      const y = Math.round(s.y * scene.starTop * h);
+      ctx.fillStyle = s.bright ? scene.starA : scene.starB;
+      ctx.globalAlpha = s.bright ? 1 : 0.5;
+      ctx.fillRect(x, y, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+  const cx = SUN.cx * w, cy = SUN.cy * h;
+  const cos = Math.cos(SUN.rot), sin = Math.sin(SUN.rot);
+  const ww = SUN.w * w, hh = SUN.h * h;
+  const crossCount = scene.stars > 20 ? 10 : 8;
+  for (let i = 0; i < crossCount; i++) {
+    const lx = (Math.random() - 0.5) * ww * 0.85;
+    const ly = (Math.random() - 0.5) * hh * 0.85;
+    const x = Math.round(cx + lx * cos - ly * sin);
+    const y = Math.round(cy + lx * sin + ly * cos);
+    ctx.fillStyle = scene.starA;
+    ctx.globalAlpha = 0.8;
+    ctx.fillRect(x, y - 1, 1, 3);
+    ctx.fillRect(x - 1, y, 3, 1);
+  }
+  ctx.globalAlpha = 1;
+  for (let i = 0; i < 6; i++) {
+    const lx = (Math.random() - 0.5) * ww * 0.85;
+    const ly = (Math.random() - 0.5) * hh * 0.85;
+    const x = cx + lx * cos - ly * sin;
+    const y = cy + lx * sin + ly * cos;
+    const len = 3 + Math.random() * 5;
+    const a = WIND_ANGLE + (Math.random() - 0.5) * 0.3;
+    ctx.strokeStyle = 'rgba(' + scene.windRgb.join(',') + ', 0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+}
+
+function flowerColorByLight(scene, m) {
+  const pi = Math.min(scene.sun.length - 1, Math.floor(m * scene.sun.length));
+  const ci = Math.min(scene.bright.length - 1, Math.floor(m * scene.bright.length));
+  return { petal: scene.sun[pi], center: scene.bright[ci] };
+}
+
+function renderFlowersTo(scene, ctx) {
+  ctx.clearRect(0, 0, COLS, ROWS);
+  const isNight = scene.name === '夜间';
+  for (let i = 0; i < flowers.length; i++) {
+    const f = flowers[i];
+    const cols = flowerColorByLight(scene, f.m);
+    const px = Math.round(f.x), py = Math.round(f.y);
+    ctx.fillStyle = cols.petal;
+    ctx.fillRect(px, py - 1, 1, 1);
+    ctx.fillRect(px, py + 1, 1, 1);
+    ctx.fillRect(px - 1, py, 1, 1);
+    ctx.fillRect(px + 1, py, 1, 1);
+    ctx.fillStyle = cols.center;
+    ctx.fillRect(px, py, 1, 1);
+    ctx.fillStyle = isNight ? 'rgba(80,100,150,0.65)' : 'rgba(80,100,60,0.6)';
+    ctx.fillRect(px, py + 2, 1, 1);
+  }
+}
+
+// ======================================================
+// 6. 静态场景渲染
+// ======================================================
+function renderScene(scene) {
+  bgCanvas.width = COLS; bgCanvas.height = ROWS;
+  bgCanvas.style.width = W + 'px'; bgCanvas.style.height = H + 'px';
+  renderBgTo(bgCtx, scene, COLS, ROWS);
+
+  grassCanvas.width = COLS; grassCanvas.height = ROWS;
+  grassCanvas.style.width = W + 'px'; grassCanvas.style.height = H + 'px';
+  renderGrassTo(grassCtx, scene);
+
+  const sunW = Math.ceil((W + 60) / PIXEL);
+  const sunH = Math.ceil((H + 60) / PIXEL);
+  sunLayer.width = sunW; sunLayer.height = sunH;
+  sunLayer.style.width = (W + 60) + 'px';
+  sunLayer.style.height = (H + 60) + 'px';
+  renderSunLayerTo(sunCtx, scene, false);
+  sunWrap.style.opacity = scene.sunOpacity;
+
+  renderGlowTo(scene);
+  renderStarsTo(scene);
+
+  flowerCanvas.width = COLS; flowerCanvas.height = ROWS;
+  flowerCanvas.style.width = W + 'px'; flowerCanvas.style.height = H + 'px';
+  renderFlowersTo(scene, flowerCtx);
+
+  fxCanvas.width = COLS; fxCanvas.height = ROWS;
+  fxCanvas.style.width = W + 'px'; fxCanvas.style.height = H + 'px';
+  fxCtx.clearRect(0, 0, COLS, ROWS);
+
+  vignette.style.background = scene.vignette;
+}
+
+// ======================================================
+// 7. 黑浪转场（三段依次执行）
+// ======================================================
+function startBlackTransition(timelineIdx) {
+  const newScene = SCENES[TIMELINE[timelineIdx].idx];
+  if (newScene === currentScene) {
+    currentTimelineIdx = timelineIdx;
+    updateScenePanelActive(timelineIdx);
+    return;
+  }
+  endGust();
+  currentWaveFront = -1;
+  currentGustEnv = 0;
+  currentElapsed = 0;
+
+  transitionNewScene = newScene;
+  transitionT = 0;
+  transitionSwapped = false;
+  isTransitioning = true;
+
+  transitionCanvas.width = COLS; transitionCanvas.height = ROWS;
+  transitionCanvas.style.width = W + 'px'; transitionCanvas.style.height = H + 'px';
+  transCtx.clearRect(0, 0, COLS, ROWS);
+
+  prepareSigns();
+
+  currentTimelineIdx = timelineIdx;
+  updateScenePanelActive(timelineIdx);
+  sceneInfo.textContent = '→ ' + newScene.name;
+}
+
+function renderBlackFill(waveFront) {
+  transCtx.clearRect(0, 0, COLS, ROWS);
+  transCtx.fillStyle = '#000';
+  for (let y = 0; y < ROWS; y++) {
+    const ny = y / ROWS;
+    for (let x = 0; x < COLS; x++) {
+      const nx = x / COLS;
+      const proj = nx * WIND_DX + ny * WIND_DY;
+      const n1 = smoothNoise(nx * 3.5, ny * 3.5, 71) - 0.5;
+      const n2 = smoothNoise(nx * 9, ny * 9, 72) - 0.5;
+      const n4 = smoothNoise(nx * 1.6, ny * 1.6, 74) - 0.5;
+      const frontOffset = n1 * 0.26 + n2 * 0.14 + n4 * 0.20;
+      let a = (waveFront + frontOffset - proj) / 0.14;
+      if (a < 0) a = 0; else if (a > 1) a = 1;
+      a = a * a * (3 - 2 * a);
+      if (a < 0.95) {
+        const grain = smoothNoise(nx * 60, ny * 60, 75);
+        if (grain > a) continue;
+      }
+      transCtx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+function renderBlackRetreat(waveFront) {
+  transCtx.clearRect(0, 0, COLS, ROWS);
+  transCtx.fillStyle = '#000';
+  for (let y = 0; y < ROWS; y++) {
+    const ny = y / ROWS;
+    for (let x = 0; x < COLS; x++) {
+      const nx = x / COLS;
+      const proj = nx * WIND_DX + ny * WIND_DY;
+      const n1 = smoothNoise(nx * 3.5, ny * 3.5, 71) - 0.5;
+      const n2 = smoothNoise(nx * 9, ny * 9, 72) - 0.5;
+      const n4 = smoothNoise(nx * 1.6, ny * 1.6, 74) - 0.5;
+      const frontOffset = n1 * 0.26 + n2 * 0.14 + n4 * 0.20;
+      let a = (proj - waveFront - frontOffset) / 0.14;
+      if (a < 0) a = 0; else if (a > 1) a = 1;
+      a = a * a * (3 - 2 * a);
+      if (a < 0.95) {
+        const grain = smoothNoise(nx * 60, ny * 60, 75);
+        if (grain > a) continue;
+      }
+      transCtx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+// 渲染一个署名到指定 canvas（转场像素级），量化成纯色
+function renderSignTo(canvas, sign) {
+  const fontSize = 22;
+  const pad = 30;
+
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext('2d');
+  tctx.fillStyle = '#000';
+  tctx.fillRect(0, 0, W, H);
+  tctx.fillStyle = '#fff';
+  tctx.font = fontSize + 'px "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif';
+  tctx.textBaseline = 'bottom';
+
+  if (sign.align === 'left') {
+    tctx.textAlign = 'left';
+    tctx.fillText(sign.text, pad, H - pad);
+  } else {
+    tctx.textAlign = 'right';
+    tctx.fillText(sign.text, W - pad, H - pad);
+  }
+
+  const img = tctx.getImageData(0, 0, W, H);
+  const d = img.data;
+
+  canvas.width = COLS;
+  canvas.height = ROWS;
+  const cctx = canvas.getContext('2d');
+  cctx.clearRect(0, 0, COLS, ROWS);
+
+  const THRESHOLD = 0.30;
+  for (let ty = 0; ty < ROWS; ty++) {
+    const sy0 = Math.floor(ty * H / ROWS);
+    const sy1 = Math.max(sy0 + 1, Math.floor((ty + 1) * H / ROWS));
+    for (let tx = 0; tx < COLS; tx++) {
+      const sx0 = Math.floor(tx * W / COLS);
+      const sx1 = Math.max(sx0 + 1, Math.floor((tx + 1) * W / COLS));
+      let bright = 0, total = 0;
+      for (let sy = sy0; sy < sy1; sy++) {
+        const rowBase = sy * W * 4;
+        for (let sx = sx0; sx < sx1; sx++) {
+          const idx = rowBase + sx * 4;
+          if (d[idx] > 128) bright++;
+          total++;
+        }
+      }
+      if (total > 0 && bright / total > THRESHOLD) {
+        cctx.fillStyle = sign.color;
+        cctx.fillRect(tx, ty, 1, 1);
+      }
+    }
+  }
+}
+
+function prepareSigns() {
+  renderSignTo(signVincCanvas, SIGN_VINC);
+  renderSignTo(signDrSCanvas,  SIGN_DRS);
+}
+
+function updateBlackTransition(dt) {
+  transitionT += dt / TRANSITION_DURATION;
+  if (transitionT >= 1) transitionT = 1;
+
+  const tFillEnd = TRANSITION_FILL_RATIO;
+  const tHoldEnd = TRANSITION_FILL_RATIO + TRANSITION_HOLD_RATIO;
+
+  if (transitionT < tFillEnd) {
+    // 段1：铺满。waveFront 从 -1.5 到 2.0，起止都干净
+    const p = transitionT / tFillEnd;
+    const waveFront = -1.5 + p * 3.5;
+    renderBlackFill(waveFront);
+  } else if (transitionT < tHoldEnd) {
+    // 段2：全屏纯黑 + 角落两个署名淡入淡出
+    if (!transitionSwapped) {
+      transCtx.clearRect(0, 0, COLS, ROWS);
+      transCtx.fillStyle = '#000';
+      transCtx.fillRect(0, 0, COLS, ROWS);
+      currentScene = transitionNewScene;
+      renderScene(currentScene);
+      transitionSwapped = true;
+    }
+    transCtx.clearRect(0, 0, COLS, ROWS);
+    transCtx.fillStyle = '#000';
+    transCtx.fillRect(0, 0, COLS, ROWS);
+
+    const pHold = (transitionT - tFillEnd) / (tHoldEnd - tFillEnd);
+
+    // 签名淡入淡出：0~0.2 淡入，0.2~0.8 保持，0.8~1 淡出
+    let alpha = 1;
+    if (pHold < 0.2) alpha = pHold / 0.2;
+    else if (pHold > 0.8) alpha = (1 - pHold) / 0.2;
+    if (alpha < 0) alpha = 0;
+    if (alpha > 1) alpha = 1;
+    alpha = alpha * alpha * (3 - 2 * alpha);
+
+    if (alpha > 0.01) {
+      transCtx.globalAlpha = alpha;
+      transCtx.imageSmoothingEnabled = false;
+      transCtx.drawImage(signVincCanvas, 0, 0, COLS, ROWS);
+      transCtx.drawImage(signDrSCanvas, 0, 0, COLS, ROWS);
+      transCtx.globalAlpha = 1;
+    }
+  } else {
+    // 段3：退走。waveFront 从 -1.5 到 2.0，起止都干净
+    if (!transitionSwapped) {
+      transCtx.clearRect(0, 0, COLS, ROWS);
+      transCtx.fillStyle = '#000';
+      transCtx.fillRect(0, 0, COLS, ROWS);
+      currentScene = transitionNewScene;
+      renderScene(currentScene);
+      transitionSwapped = true;
+    }
+    const p = (transitionT - tHoldEnd) / (1 - tHoldEnd);
+    const waveFront = -1.5 + p * 3.5;
+    renderBlackRetreat(waveFront);
+  }
+
+  if (transitionT >= 1) {
+    isTransitioning = false;
+    transitionNewScene = null;
+    transitionSwapped = false;
+    transCtx.clearRect(0, 0, COLS, ROWS);
+    sceneInfo.textContent = '当前：' + currentScene.name;
+  }
+}
+
+// ======================================================
+// 8. 风浪
+// ======================================================
+function getGustInfo() {
+  return { active: gustActive, waveFront: currentWaveFront,
+    env: currentGustEnv, elapsed: currentElapsed };
+}
+function triggerGust(durationSec) {
+  if (isTransitioning) return;
+  gustActive = true;
+  gustStart = performance.now();
+  gustDuration = durationSec * 1000;
+  waveCanvas.width = COLS; waveCanvas.height = ROWS;
+  waveCanvas.style.width = W + 'px'; waveCanvas.style.height = H + 'px';
+  waveCanvas.classList.add('active');
+}
+function endGust() {
+  gustActive = false;
+  waveCanvas.classList.remove('active');
+  currentWaveFront = -1; currentGustEnv = 0;
+}
+function renderGust() {
+  if (!gustActive || isTransitioning) { requestAnimationFrame(renderGust); return; }
+  const now = performance.now();
+  const elapsed = (now - gustStart) / 1000;
+  const total = gustDuration / 1000;
+  if (elapsed > total) { endGust(); requestAnimationFrame(renderGust); return; }
+  let env = 1;
+  if (elapsed < 0.8) env = elapsed / 0.8;
+  else if (elapsed > total - 0.8) env = Math.max(0, (total - elapsed) / 0.8);
+  const travelSpeed = 1.5 / Math.max(1.2, total - 1.2);
+  const waveFront = elapsed * travelSpeed - 0.2;
+  currentWaveFront = waveFront; currentGustEnv = env; currentElapsed = elapsed;
+  waveCtx.clearRect(0, 0, COLS, ROWS);
+  const width = 0.16;
+  const scene = currentScene;
+  for (let i = 0; i < bladeData.length; i++) {
+    const b = bladeData[i];
+    const nx = b.x / COLS, ny = b.y / ROWS;
+    const proj = nx * WIND_DX + ny * WIND_DY;
+    const n1 = smoothNoise(nx * 5, ny * 5, 21) - 0.5;
+    const n2 = smoothNoise(nx * 14, ny * 14, 22) - 0.5;
+    const n4 = smoothNoise(nx * 2.2, ny * 2.2, 24) - 0.5;
+    const frontOffset = n1 * 0.26 + n2 * 0.14 + n4 * 0.20;
+    const grassJitter = (hash2(b.x, b.y, 41) - 0.5) * 0.06;
+    const localFront = waveFront + frontOffset + grassJitter;
+    const d = proj - localFront;
+    const local = Math.exp(-(d * d) / (width * width));
+    const jitter = 0.4 + 0.6 * (Math.sin(b.phase) * 0.5 + 0.5);
+    const amp = local * env * jitter;
+    const phase = d * 10 + b.phase + hash2(b.x, b.y, 42) * 6;
+    const bendFactor = Math.max(0, Math.sin(phase) * 0.5 + 0.5) * amp;
+    if (bendFactor < 0.02) continue;
+    const bright = bendFactor > 0.25;
+    let color;
+    const rr = Math.random();
+    if (b.zone === 'sun') color = rr > 0.45 ? rand(scene.sun) : rand(scene.mid);
+    else if (b.zone === 'mid') color = rr > 0.55 ? rand(scene.mid) : rand(scene.dark);
+    else color = rand(scene.dark);
+    drawBlade(waveCtx, b, color, rand(scene.outline), rand(scene.bright),
+      1 + bendFactor * 2.4, bright);
+  }
+  waveCtx.save();
+  waveCtx.translate(0, 0);
+  waveCtx.rotate(WIND_ANGLE);
+  const fr = waveFront * COLS * Math.cos(WIND_ANGLE);
+  const g2 = waveCtx.createLinearGradient(fr - 30, 0, fr + 30, 0);
+  const wr = scene.windRgb;
+  g2.addColorStop(0, 'rgba(' + wr.join(',') + ',0)');
+  g2.addColorStop(0.5, 'rgba(' + wr.join(',') + ',' + (0.10 * env) + ')');
+  g2.addColorStop(1, 'rgba(' + wr.join(',') + ',0)');
+  waveCtx.fillStyle = g2;
+  waveCtx.fillRect(fr - 30, -ROWS * 2, 60, ROWS * 4);
+  waveCtx.restore();
+  requestAnimationFrame(renderGust);
+}
+
+// ======================================================
+// 9. 光斑循环
+// ======================================================
+let lightTime = 0, lastFrameTime = 0;
+function renderLightShake(timestamp) {
+  if (!lastFrameTime) lastFrameTime = timestamp;
+  const dt = Math.min(50, timestamp - lastFrameTime) / 1000;
+  lastFrameTime = timestamp;
+  lightTime += dt;
+  const shiftX = Math.sin(lightTime * 0.45) * 5 + Math.sin(lightTime * 0.9 + 0.8) * 2;
+  const shiftY = Math.cos(lightTime * 0.4 + 0.3) * 4 + Math.sin(lightTime * 0.75 + 1.5) * 1.5;
+  sunLayer.style.transform = 'translate3d(' + shiftX.toFixed(2) + 'px,' + shiftY.toFixed(2) + 'px,0)';
+  glowLayer.style.transform = 'translate3d(' + (shiftX * 1.15).toFixed(2) + 'px,' + (shiftY * 1.15).toFixed(2) + 'px,0)';
+  requestAnimationFrame(renderLightShake);
+}
+requestAnimationFrame(renderLightShake);
+
+function renderSunLoop() {
+  if (!isTransitioning && currentScene) {
+    renderSunLayerTo(sunCtx, currentScene, false);
+  }
+  requestAnimationFrame(renderSunLoop);
+}
+requestAnimationFrame(renderSunLoop);
+
+// ======================================================
+// 10. 互动
+// ======================================================
+const LONG_PRESS_MS = 380;
+let pressX = 0, pressY = 0, lastTrailX = 0, lastTrailY = 0;
+let longPressTimer = null, windLoop = null;
+let isPressing = false, hasMoved = false;
+
+function screenToPixel(clientX, clientY) {
+  const rect = fxCanvas.getBoundingClientRect();
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+
+function spawnGrassBurst(x, y, intensity) {
+  const gx = x / PIXEL, gy = y / PIXEL;
+  const count = Math.floor(8 + intensity * 10);
+  const scene = currentScene || SCENES[0];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * (4 + intensity * 5);
+    particles.push({
+      x: gx + Math.cos(angle) * dist, y: gy + Math.sin(angle) * dist,
+      height: 5 + Math.floor(Math.random() * 5),
+      color: rand(scene.mid), outline: rand(scene.outline),
+      life: 1.0, decay: 0.016 + Math.random() * 0.010,
+      swayPhase: Math.random() * Math.PI * 2,
+      swayAmp: 0.8 + Math.random() * 1.0,
+      bend: 1.0 + Math.random() * 1.8,
+      bendX: WIND_DX, bendY: WIND_DY
+    });
+  }
+  ripples.push({
+    x: gx, y: gy, r: 0, maxR: 6 + intensity * 7, life: 1.0, decay: 0.02,
+    color: 'rgba(' + scene.windRgb.join(',') + ','
+  });
+}
+function spawnWindBurst(x, y, intensity) {
+  const gx = x / PIXEL, gy = y / PIXEL;
+  const count = Math.floor(12 + intensity * 12);
+  const scene = currentScene || SCENES[0];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * (7 + intensity * 12);
+    particles.push({
+      x: gx + Math.cos(angle) * dist, y: gy + Math.sin(angle) * dist,
+      height: 6 + Math.floor(Math.random() * 6),
+      color: rand(scene.mid), outline: rand(scene.outline),
+      life: 1.0, decay: 0.009 + Math.random() * 0.007,
+      swayPhase: Math.random() * Math.PI * 2,
+      swayAmp: 1.0 + Math.random() * 1.3,
+      bend: 1.5 + Math.random() * 2.4,
+      bendX: WIND_DX, bendY: WIND_DY
+    });
+  }
+  ripples.push({
+    x: gx, y: gy, r: 0, maxR: 12 + intensity * 16, life: 1.0, decay: 0.012,
+    color: 'rgba(' + scene.windRgb.join(',') + ','
+  });
+}
+function spawnTrailGrass(x, y) {
+  const gx = x / PIXEL, gy = y / PIXEL;
+  const count = 4 + Math.floor(Math.random() * 3);
+  const scene = currentScene || SCENES[0];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 3.5;
+    particles.push({
+      x: gx + Math.cos(angle) * dist, y: gy + Math.sin(angle) * dist,
+      height: 4 + Math.floor(Math.random() * 4),
+      color: rand(scene.mid), outline: rand(scene.outline),
+      life: 0.9, decay: 0.018 + Math.random() * 0.010,
+      swayPhase: Math.random() * Math.PI * 2,
+      swayAmp: 0.6 + Math.random() * 0.8,
+      bend: 0.9 + Math.random() * 1.5,
+      bendX: WIND_DX, bendY: WIND_DY
+    });
+  }
+}
+function spawnTrailRipple(x, y) {
+  const gx = x / PIXEL, gy = y / PIXEL;
+  const scene = currentScene || SCENES[0];
+  ripples.push({
+    x: gx, y: gy, r: 0, maxR: 4 + Math.random() * 3, life: 0.75, decay: 0.04,
+    color: 'rgba(' + scene.windRgb.join(',') + ','
+  });
+}
+let fxTime = 0;
+function renderFx() {
+  fxTime += 0.016;
+  fxCtx.clearRect(0, 0, COLS, ROWS);
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.r += (r.maxR - r.r) * 0.12;
+    r.life -= r.decay;
+    if (r.life <= 0) { ripples.splice(i, 1); continue; }
+    fxCtx.strokeStyle = r.color + (r.life * 0.5) + ')';
+    fxCtx.lineWidth = 1;
+    fxCtx.beginPath();
+    fxCtx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+    fxCtx.stroke();
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    const swing = Math.sin(fxTime * 3.5 + p.swayPhase) * p.swayAmp * p.life;
+    const alpha = Math.min(1, p.life * 1.5);
+    fxCtx.globalAlpha = alpha;
+    for (let h = 0; h < p.height; h++) {
+      const t = h / p.height;
+      const offsetX = Math.round(p.bendX * p.bend * t * t + swing * t);
+      const offsetY = -h + Math.round(p.bendY * p.bend * t * t);
+      const cx = Math.round(p.x + offsetX);
+      const cy = Math.round(p.y + offsetY);
+      fxCtx.fillStyle = p.outline;
+      fxCtx.fillRect(cx, cy, 1, 1);
+      fxCtx.fillStyle = p.color;
+      fxCtx.fillRect(cx + 1, cy, 1, 1);
+    }
+    fxCtx.globalAlpha = 1;
+  }
+  requestAnimationFrame(renderFx);
+}
+
+function onPressStart(clientX, clientY) {
+  const p = screenToPixel(clientX, clientY);
+  pressX = clientX; pressY = clientY;
+  lastTrailX = p.x; lastTrailY = p.y;
+  isPressing = true; hasMoved = false;
+  spawnGrassBurst(p.x, p.y, 0.4);
+  playRustle(2, false);
+  longPressTimer = setTimeout(() => {
+    if (!isPressing || hasMoved) return;
+    onLongPress(p.x, p.y);
+  }, LONG_PRESS_MS);
+}
+function onPressMove(clientX, clientY) {
+  if (!isPressing) return;
+  const dx = clientX - pressX, dy = clientY - pressY;
+  if (dx * dx + dy * dy > 8 * 8) {
+    if (!hasMoved) { hasMoved = true; clearTimeout(longPressTimer); stopLongPress(); }
+  }
+  if (hasMoved) {
+    const p = screenToPixel(clientX, clientY);
+    const ddx = p.x - lastTrailX, ddy = p.y - lastTrailY;
+    const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+    const step = 6;
+    if (dist > step) {
+      const steps = Math.min(8, Math.floor(dist / step));
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const tx = lastTrailX + ddx * t;
+        const ty = lastTrailY + ddy * t;
+        spawnTrailGrass(tx, ty);
+        if (i % 2 === 0) spawnTrailRipple(tx, ty);
+      }
+      lastTrailX = p.x; lastTrailY = p.y;
+      if (Math.random() < 0.5) playRustle(1, false);
+    }
+  }
+}
+function onPressEnd() {
+  clearTimeout(longPressTimer);
+  isPressing = false; hasMoved = false;
+  stopLongPress();
+}
+function onLongPress(px, py) {
+  spawnWindBurst(px, py, 1.0);
+  playRustle(3, true);
+  if (currentScene && (currentScene.name === '夜间' || currentScene.name === '清晨')) {
+    if (Math.random() < 0.7) playRandomCricket(1);
+  } else if (Math.random() < 0.6) {
+    playRandomBird();
+  }
+  if (windLoop) clearInterval(windLoop);
+  let tick = 0;
+  windLoop = setInterval(() => {
+    if (!isPressing) { clearInterval(windLoop); windLoop = null; return; }
+    tick++;
+    spawnWindBurst(px, py, 0.8);
+    playRustle(3, true);
+    if (tick % 3 === 0) {
+      if (currentScene && currentScene.name === '夜间') {
+        if (Math.random() < 0.5) playRandomCricket(0.8);
+      } else if (Math.random() < 0.4) {
+        playRandomBird();
+      }
+    }
+  }, 450);
+}
+function stopLongPress() {
+  if (windLoop) { clearInterval(windLoop); windLoop = null; }
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  onPressStart(e.clientX, e.clientY);
+});
+document.addEventListener('mousemove', (e) => {
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  onPressMove(e.clientX, e.clientY);
+});
+document.addEventListener('mouseup', (e) => {
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  onPressEnd();
+});
+document.addEventListener('touchstart', (e) => {
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.touches.length > 0) onPressStart(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  if (e.touches.length > 0) onPressMove(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (e.target.closest('#speaker') || e.target.closest('#scenePanel')) return;
+  onPressEnd();
+}, { passive: true });
+
+// ======================================================
+// 11. 声音
+// ======================================================
+let audioCtx = null, soundOn = false, masterGain = null;
+let windGain = null, gustTimer = null, birdTimer = null, cricketTimer = null;
+const speaker = document.getElementById('speaker');
+const waves = document.getElementById('waves');
+const muteLine = document.getElementById('muteLine');
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0;
+  masterGain.connect(audioCtx.destination);
+  const bufSize = audioCtx.sampleRate * 3;
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < bufSize; i++) {
+    const w = Math.random() * 2 - 1;
+    d[i] = (last + 0.012 * w) / 1.012;
+    last = d[i]; d[i] *= 2.4;
+  }
+  const wind = audioCtx.createBufferSource();
+  wind.buffer = buf; wind.loop = true;
+  const wf = audioCtx.createBiquadFilter();
+  wf.type = 'lowpass';
+  wf.frequency.value = currentScene ? currentScene.windFreq : 420;
+  wf.Q.value = 0.5;
+  windGain = audioCtx.createGain();
+  windGain.gain.value = currentScene ? currentScene.windGain : 0.10;
+  wind.connect(wf); wf.connect(windGain); windGain.connect(masterGain);
+  wind.start();
+}
+function playGust(durationSec) {
+  if (!audioCtx || !currentScene) return;
+  const now = audioCtx.currentTime;
+  windGain.gain.cancelScheduledValues(now);
+  windGain.gain.setValueAtTime(windGain.gain.value, now);
+  windGain.gain.linearRampToValueAtTime(currentScene.gustPeak, now + 1.2);
+  windGain.gain.linearRampToValueAtTime(currentScene.windGain, now + durationSec);
+  triggerGust(durationSec);
+}
+function scheduleGust() {
+  if (!soundOn) return;
+  const delay = 15000 + Math.random() * 12000;
+  gustTimer = setTimeout(() => {
+    if (!soundOn) return;
+    playGust(4 + Math.random() * 3);
+    scheduleGust();
+  }, delay);
+}
+function playRustle(intensity, isLong) {
+  if (!soundOn || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  const dur = isLong ? 0.55 + Math.random() * 0.25 : 0.25 + Math.random() * 0.12;
+  const bufSize = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) {
+    const t = i / bufSize;
+    let env;
+    if (t < 0.2) env = t / 0.2;
+    else env = Math.pow(1 - (t - 0.2) / 0.8, 1.6);
+    d[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 1600 + Math.random() * 400;
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 250;
+  const g = audioCtx.createGain();
+  const vol = Math.min(0.10, 0.015 + intensity * 0.007);
+  g.gain.setValueAtTime(vol, now);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(masterGain);
+  src.start(now); src.stop(now + dur + 0.05);
+}
+function playBird() {
+  if (!soundOn || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  const notes = 2 + Math.floor(Math.random() * 3);
+  const baseFreq = 1600 + Math.random() * 1400;
+  for (let i = 0; i < notes; i++) {
+    const t = now + i * (0.08 + Math.random() * 0.06);
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    const f1 = baseFreq * (0.9 + Math.random() * 0.3);
+    const f2 = f1 * (1.1 + Math.random() * 0.2);
+    osc.frequency.setValueAtTime(f1, t);
+    osc.frequency.exponentialRampToValueAtTime(f2, t + 0.05);
+    osc.frequency.exponentialRampToValueAtTime(f1 * 0.95, t + 0.1);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05 + Math.random() * 0.04, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.14);
+  }
+}
+function playRandomBird() {
+  if (!soundOn || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  if (currentScene && currentScene.name === '夜间') {
+    const notes = 2;
+    const baseFreq = 480 + Math.random() * 130;
+    for (let i = 0; i < notes; i++) {
+      const t = now + i * 0.4;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(baseFreq, t);
+      osc.frequency.linearRampToValueAtTime(baseFreq * 1.05, t + 0.2);
+      osc.frequency.linearRampToValueAtTime(baseFreq * 0.9, t + 0.32);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      osc.connect(g); g.connect(masterGain);
+      osc.start(t); osc.stop(t + 0.36);
+    }
+  } else {
+    playBird();
+  }
+}
+function scheduleBird() {
+  if (!soundOn || !currentScene) return;
+  const delay = currentScene.birdDelayMin + Math.random() * currentScene.birdDelayRange;
+  birdTimer = setTimeout(() => {
+    if (!soundOn) return;
+    playRandomBird();
+    scheduleBird();
+  }, delay);
+}
+function playCricketByType(type, volumeMul) {
+  if (!soundOn || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  volumeMul = volumeMul || 1;
+  if (type === 0) {
+    const pulses = 3 + Math.floor(Math.random() * 3);
+    const freq = 4200 + Math.random() * 800;
+    for (let i = 0; i < pulses; i++) {
+      const t = now + i * 0.06;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 12;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.018 * volumeMul, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      osc.connect(bp); bp.connect(g); g.connect(masterGain);
+      osc.start(t); osc.stop(t + 0.06);
+    }
+  } else if (type === 1) {
+    const pulses = 4 + Math.floor(Math.random() * 3);
+    const baseFreq = 2800 + Math.random() * 600;
+    for (let i = 0; i < pulses; i++) {
+      const t = now + i * 0.07;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(baseFreq, t);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.92, t + 0.05);
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = baseFreq; bp.Q.value = 8;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.022 * volumeMul, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      osc.connect(bp); bp.connect(g); g.connect(masterGain);
+      osc.start(t); osc.stop(t + 0.07);
+    }
+  } else {
+    const pulses = 5 + Math.floor(Math.random() * 3);
+    const freq = 5600 + Math.random() * 900;
+    for (let i = 0; i < pulses; i++) {
+      const t = now + i * 0.045;
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 18;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.014 * volumeMul, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      osc.connect(bp); bp.connect(g); g.connect(masterGain);
+      osc.start(t); osc.stop(t + 0.05);
+    }
+  }
+}
+function playRandomCricket(volumeMul) {
+  playCricketByType(Math.floor(Math.random() * 3), volumeMul);
+}
+function scheduleCricket() {
+  if (!soundOn || !currentScene) return;
+  const delay = currentScene.cricketDelayMin + Math.random() * currentScene.cricketDelayRange;
+  cricketTimer = setTimeout(() => {
+    if (!soundOn) return;
+    playRandomCricket(1);
+    if (Math.random() < 0.5) setTimeout(() => playRandomCricket(0.7), 250 + Math.random() * 300);
+    scheduleCricket();
+  }, delay);
+}
+function startAmbient() {
+  gustTimer = setTimeout(() => {
+    if (!soundOn) return;
+    playGust(4);
+    scheduleGust();
+  }, 2000);
+  scheduleBird();
+  scheduleCricket();
+}
+function stopAmbient() {
+  if (gustTimer) { clearTimeout(gustTimer); gustTimer = null; }
+  if (birdTimer) { clearTimeout(birdTimer); birdTimer = null; }
+  if (cricketTimer) { clearTimeout(cricketTimer); cricketTimer = null; }
+  endGust();
+  if (windGain && audioCtx && currentScene) {
+    windGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    windGain.gain.setValueAtTime(currentScene.windGain, audioCtx.currentTime);
+  }
+}
+speaker.addEventListener('click', function (e) {
+  e.stopPropagation();
+  initAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (!soundOn) {
+    soundOn = true;
+    masterGain.gain.linearRampToValueAtTime(0.9, audioCtx.currentTime + 0.8);
+    speaker.classList.add('on');
+    waves.setAttribute('opacity', '1');
+    muteLine.setAttribute('opacity', '0');
+    startAmbient();
+  } else {
+    soundOn = false;
+    masterGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+    speaker.classList.remove('on');
+    waves.setAttribute('opacity', '0');
+    muteLine.setAttribute('opacity', '1');
+    stopAmbient();
+  }
+});
+speaker.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+// ======================================================
+// 12. 场景切换按钮
+// ======================================================
+function updateScenePanelActive(idx) {
+  const btns = document.querySelectorAll('.sceneBtn');
+  btns.forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.tl, 10) === idx);
+  });
+}
+
+function jumpToTimeline(idx) {
+  if (idx < 0 || idx >= TIMELINE.length) return;
+  if (isTransitioning) return;
+  startBlackTransition(idx);
+}
+
+document.querySelectorAll('.sceneBtn').forEach(btn => {
+  const handler = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const idx = parseInt(btn.dataset.tl, 10);
+    jumpToTimeline(idx);
+  };
+  btn.addEventListener('click', handler);
+  btn.addEventListener('touchstart', handler, { passive: false });
+});
+
+// ======================================================
+// 13. 主循环 / 场景检查
+// ======================================================
+function checkTimeScene() {
+  if (isTransitioning) return;
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  const desired = findTimelineIdx(h);
+  if (desired !== currentTimelineIdx) {
+    startBlackTransition(desired);
+  }
+}
+
+function mainLoop(now) {
+  const dt = Math.min(50, now - lastTickTime) / 1000;
+  lastTickTime = now;
+  if (isTransitioning) {
+    updateBlackTransition(dt);
+  }
+  requestAnimationFrame(mainLoop);
+}
+
+// ======================================================
+// 14. 初始化
+// ======================================================
+function resizeAll() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  COLS = Math.ceil(W / PIXEL);
+  ROWS = Math.ceil(H / PIXEL);
+  [bgCanvas, grassCanvas, waveCanvas, starCanvas, flowerCanvas, fxCanvas].forEach(c => {
+    c.width = COLS; c.height = ROWS;
+    c.style.width = W + 'px'; c.style.height = H + 'px';
+  });
+  transitionCanvas.width = COLS; transitionCanvas.height = ROWS;
+  transitionCanvas.style.width = W + 'px'; transitionCanvas.style.height = H + 'px';
+  transCtx.clearRect(0, 0, COLS, ROWS);
+
+  preGenerate();
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  const tlIdx = findTimelineIdx(h);
+  currentTimelineIdx = tlIdx;
+  currentScene = SCENES[TIMELINE[tlIdx].idx];
+  sceneInfo.textContent = '当前：' + currentScene.name;
+  renderScene(currentScene);
+  updateScenePanelActive(tlIdx);
+}
+
+window.addEventListener('resize', () => {
+  clearTimeout(window._rt);
+  window._rt = setTimeout(resizeAll, 250);
+});
+
+resizeAll();
+setInterval(checkTimeScene, 30000);
+requestAnimationFrame(mainLoop);
+requestAnimationFrame(renderGust);
+renderFx();
+lastTickTime = performance.now();
+</script>
+
+<script>
+window.addEventListener('load', function () {
+  var s = document.getElementById('mainScript');
+  if (!s) { console.error('mainScript 未找到'); return; }
+  try {
+    (0, eval)(s.textContent);
+    console.log('主脚本执行成功');
+  } catch (e) {
+    console.error('主脚本执行失败:', e);
+  }
+});
+</script>
+</body>
+</html>
