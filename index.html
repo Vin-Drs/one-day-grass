@@ -1025,7 +1025,7 @@ function synthBellSequence() {
   const repeatGap = 3.2;
   const noteGap = 0.55;
   const tailDur = 3.2;
-  for (let repeat = 0; repeat < 3; repeat++) {
+  for (let repeat = 0; repeat < 5; repeat++) {
     notes.forEach((n, i) => {
       const t = now + repeat * repeatGap + i * noteGap;
       const freq = FROG_CONFIG.baseFreq[n - 1] * 0.5;
