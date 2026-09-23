@@ -879,7 +879,7 @@ const FROG_CONFIG = {
     { note: 5, x: 0.85, y: 0.88 }
   ],
   birdSpot: { x: 0.15, y: 0.20 },
-  cricketSpot: { x: 0.15, y: 0.75 },
+  cricketSpot: { x: 0.15, y: 0.60 },
   hitRadius: 0.09,
   hitRadiusPx: 50,
   cricketHitRadius: 0.15,
@@ -973,48 +973,84 @@ function synthFrogQuarrel() {
   }
 }
 
-// ★ 恢复旧版鸟鸣（更慢一点，接近 BPM 75 的呼吸感）
+// ★ 悦耳鸟鸣：高音滑入 + 颤音 + 快速滚音收尾，像清晨画眉
 function synthBirdCall(notes, speed) {
   if (!audioCtx || !soundOn) return;
-  speed = speed || 0.42;  // ★ 从 0.18 改为 0.42，更慢更从容
+  speed = speed || 0.42;
   const now = audioCtx.currentTime;
   notes.forEach((n, i) => {
     const t = now + i * speed;
+    const freq = FROG_CONFIG.baseFreq[n - 1] * 4.5;
+
     const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
     osc.type = 'sine';
-    const freq = FROG_CONFIG.baseFreq[n - 1] * 2;
-    osc.frequency.setValueAtTime(freq, t);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.06, t + 0.06);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.96, t + 0.14);
+    osc.frequency.setValueAtTime(freq * 0.85, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.05, t + 0.035);
+    osc.frequency.exponentialRampToValueAtTime(freq, t + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.02, t + 0.16);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.98, t + 0.24);
+
+    const vib = audioCtx.createOscillator();
+    vib.type = 'sine';
+    vib.frequency.value = 42;
+    const vibGain = audioCtx.createGain();
+    vibGain.gain.value = freq * 0.018;
+    vib.connect(vibGain);
+    vibGain.connect(osc.frequency);
+
+    const g = audioCtx.createGain();
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.28, t + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
-    osc.connect(g); g.connect(masterGain);
-    osc.start(t); osc.stop(t + 0.22);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.008);
+    g.gain.setValueAtTime(0.20, t + 0.10);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq * 1.1;
+    bp.Q.value = 3.5;
+
+    const shelf = audioCtx.createBiquadFilter();
+    shelf.type = 'highshelf';
+    shelf.frequency.value = 6000;
+    shelf.gain.value = -6;
+
+    osc.connect(bp); bp.connect(shelf); shelf.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.30);
+    vib.start(t); vib.stop(t + 0.30);
   });
 }
 
-// ★ 虫鸣更明显，速度更慢
+// ★ 蛐蛐叫：BPM 75，每个音是一串短脉冲，音高清晰可辨
 function synthCricketCall(notes, speed) {
   if (!audioCtx || !soundOn) return;
-  speed = speed || 0.28;  // ★ 从 0.14 改为 0.28，慢一倍
+  speed = speed || 0.4;
   const now = audioCtx.currentTime;
   notes.forEach((n, i) => {
     const t = now + i * speed;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    const bp = audioCtx.createBiquadFilter();
-    osc.type = 'triangle';
-    const freq = FROG_CONFIG.baseFreq[n - 1] * 4;
-    osc.frequency.setValueAtTime(freq, t);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.94, t + 0.08);
-    bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 10;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.22, t + 0.008);  // ★ 从 0.14 改为 0.22，更明显
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
-    osc.connect(bp); bp.connect(g); g.connect(masterGain);
-    osc.start(t); osc.stop(t + 0.12);
+    const baseFreq = FROG_CONFIG.baseFreq[n - 1] * 3.2;
+
+    const pulses = 3 + Math.floor(Math.random() * 3);
+    for (let p = 0; p < pulses; p++) {
+      const pt = t + p * 0.035;
+      const osc = audioCtx.createOscillator();
+      osc.type = 'triangle';
+      const freq = baseFreq * (0.97 + Math.random() * 0.06);
+      osc.frequency.setValueAtTime(freq, pt);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.98, pt + 0.02);
+
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = freq;
+      bp.Q.value = 14;
+
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0, pt);
+      g.gain.linearRampToValueAtTime(0.14, pt + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, pt + 0.028);
+
+      osc.connect(bp); bp.connect(g); g.connect(masterGain);
+      osc.start(pt); osc.stop(pt + 0.032);
+    }
   });
 }
 
