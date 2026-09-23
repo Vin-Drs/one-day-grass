@@ -895,15 +895,17 @@ function renderDebugDots() {
 function synthFrogTone(noteIndex, duration) {
   if (!audioCtx || !soundOn) return;
   // ★ 有真实音频则优先用真实音频
-  if (useRealAudio && AUDIO_ASSETS['frog_' + noteIndex]) {
-    const src = audioCtx.createBufferSource();
-    src.buffer = AUDIO_ASSETS['frog_' + noteIndex];
-    const g = audioCtx.createGain();
-    g.gain.value = 0.8;
-    src.connect(g); g.connect(masterGain);
-    src.start(0);
-    return;
+if (useRealAudio && AUDIO_ASSETS['frog_' + noteIndex]) {
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
   }
+  const src = audioCtx.createBufferSource();
+  const g = audioCtx.createGain();
+  g.gain.value = 0.8;
+  src.connect(g); g.connect(masterGain);
+  src.start(0);
+  return;
+}
   duration = duration || 0.32;
   const now = audioCtx.currentTime;
   const freq = FROG_CONFIG.baseFreq[noteIndex - 1];
@@ -1094,6 +1096,9 @@ function playRewardBGM() {
   if (!audioCtx || !soundOn) return;
   // ★ 有真实 BGM 则优先用真实 BGM
   if (useRealAudio && AUDIO_ASSETS.symphony) {
+ if (audioCtx.state === 'suspended') {
+  audioCtx.resume();
+}
     const src = audioCtx.createBufferSource();
     src.buffer = AUDIO_ASSETS.symphony;
     const g = audioCtx.createGain();
