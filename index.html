@@ -2588,12 +2588,12 @@ async function loadRealAudio() {
   const files = ['frog_1', 'frog_2', 'frog_3', 'frog_4', 'frog_5', 'symphony'];
   for (const name of files) {
     try {
-      const res = await fetch('sounds/' + name + '.wav');
+      const res = await fetch('sounds/' + name + '.mp3');
       const buf = await res.arrayBuffer();
       AUDIO_ASSETS[name] = await audioCtx.decodeAudioData(buf);
-      console.log('🎧 已加载 sounds/' + name + '.wav');
+      console.log('🎧 已加载 sounds/' + name + '.mp3');
     } catch (e) {
-      console.warn('⚠️ 加载失败 sounds/' + name + '.wav', e);
+      console.warn('⚠️ 加载失败 sounds/' + name + '.mp3', e);
     }
   }
   if (AUDIO_ASSETS.frog_1 && AUDIO_ASSETS.symphony) {
