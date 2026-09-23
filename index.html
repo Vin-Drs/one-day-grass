@@ -2441,6 +2441,10 @@ function renderFx() {
 }
 
 function onPressStart(clientX, clientY) {
+   if (!realAudioLoading && !useRealAudio) {
+    initAudio();
+    loadRealAudio();
+  }
   checkFrogHit(clientX, clientY);
   const p = screenToPixel(clientX, clientY);
   pressX = clientX; pressY = clientY;
