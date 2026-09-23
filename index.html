@@ -895,17 +895,18 @@ function renderDebugDots() {
 function synthFrogTone(noteIndex, duration) {
   if (!audioCtx || !soundOn) return;
   // ★ 有真实音频则优先用真实音频
-if (useRealAudio && AUDIO_ASSETS['frog_' + noteIndex]) {
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
+  if (useRealAudio && AUDIO_ASSETS['frog_' + noteIndex]) {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = AUDIO_ASSETS['frog_' + noteIndex];
+    const g = audioCtx.createGain();
+    g.gain.value = 0.9;
+    src.connect(g); g.connect(masterGain);
+    src.start(0);
+    return;
   }
-  const src = audioCtx.createBufferSource();
-  const g = audioCtx.createGain();
-  g.gain.value = 0.8;
-  src.connect(g); g.connect(masterGain);
-  src.start(0);
-  return;
-}
   duration = duration || 0.32;
   const now = audioCtx.currentTime;
   const freq = FROG_CONFIG.baseFreq[noteIndex - 1];
@@ -971,10 +972,10 @@ function synthFrogQuarrel() {
   }
 }
 
-// ★ 恢复旧版鸟鸣
+// ★ 恢复旧版鸟鸣（更慢一点，接近 BPM 75 的呼吸感）
 function synthBirdCall(notes, speed) {
   if (!audioCtx || !soundOn) return;
-  speed = speed || 0.18;
+  speed = speed || 0.42;  // ★ 从 0.18 改为 0.42，更慢更从容
   const now = audioCtx.currentTime;
   notes.forEach((n, i) => {
     const t = now + i * speed;
@@ -983,19 +984,20 @@ function synthBirdCall(notes, speed) {
     osc.type = 'sine';
     const freq = FROG_CONFIG.baseFreq[n - 1] * 2;
     osc.frequency.setValueAtTime(freq, t);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.06, t + 0.04);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.96, t + 0.09);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.06, t + 0.06);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.96, t + 0.14);
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.25, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+    g.gain.linearRampToValueAtTime(0.28, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
     osc.connect(g); g.connect(masterGain);
-    osc.start(t); osc.stop(t + 0.13);
+    osc.start(t); osc.stop(t + 0.22);
   });
 }
 
+// ★ 虫鸣更明显，速度更慢
 function synthCricketCall(notes, speed) {
   if (!audioCtx || !soundOn) return;
-  speed = speed || 0.14;
+  speed = speed || 0.28;  // ★ 从 0.14 改为 0.28，慢一倍
   const now = audioCtx.currentTime;
   notes.forEach((n, i) => {
     const t = now + i * speed;
@@ -1005,13 +1007,13 @@ function synthCricketCall(notes, speed) {
     osc.type = 'triangle';
     const freq = FROG_CONFIG.baseFreq[n - 1] * 4;
     osc.frequency.setValueAtTime(freq, t);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.94, t + 0.05);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.94, t + 0.08);
     bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 10;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.14, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.008);  // ★ 从 0.14 改为 0.22，更明显
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
     osc.connect(bp); bp.connect(g); g.connect(masterGain);
-    osc.start(t); osc.stop(t + 0.07);
+    osc.start(t); osc.stop(t + 0.12);
   });
 }
 
@@ -1094,15 +1096,15 @@ function synthFrogCough() {
 
 function playRewardBGM() {
   if (!audioCtx || !soundOn) return;
-  // ★ 有真实 BGM 则优先用真实 BGM
+  // ★ 有真实 BGM 则优先用真实 BGM，音量调大
   if (useRealAudio && AUDIO_ASSETS.symphony) {
- if (audioCtx.state === 'suspended') {
-  audioCtx.resume();
-}
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
     const src = audioCtx.createBufferSource();
     src.buffer = AUDIO_ASSETS.symphony;
     const g = audioCtx.createGain();
-    g.gain.value = 0.8;
+    g.gain.value = 1.0;  // ★ 从 0.8 调到 1.0，更饱满
     src.connect(g); g.connect(masterGain);
     src.start(0);
     const dur = AUDIO_ASSETS.symphony.duration * 1000 + 500;
@@ -2685,20 +2687,20 @@ function playBird() {
   const notes = 2 + Math.floor(Math.random() * 3);
   const baseFreq = 1600 + Math.random() * 1400;
   for (let i = 0; i < notes; i++) {
-    const t = now + i * (0.08 + Math.random() * 0.06);
+    const t = now + i * (0.12 + Math.random() * 0.10);
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     osc.type = 'sine';
     const f1 = baseFreq * (0.9 + Math.random() * 0.3);
     const f2 = f1 * (1.1 + Math.random() * 0.2);
     osc.frequency.setValueAtTime(f1, t);
-    osc.frequency.exponentialRampToValueAtTime(f2, t + 0.05);
-    osc.frequency.exponentialRampToValueAtTime(f1 * 0.95, t + 0.1);
+    osc.frequency.exponentialRampToValueAtTime(f2, t + 0.06);
+    osc.frequency.exponentialRampToValueAtTime(f1 * 0.95, t + 0.14);
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.16 + Math.random() * 0.10, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    g.gain.linearRampToValueAtTime(0.16 + Math.random() * 0.10, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
     osc.connect(g); g.connect(masterGain);
-    osc.start(t); osc.stop(t + 0.14);
+    osc.start(t); osc.stop(t + 0.20);
   }
 }
 function playRandomBird() {
@@ -2708,18 +2710,18 @@ function playRandomBird() {
     const notes = 2;
     const baseFreq = 480 + Math.random() * 130;
     for (let i = 0; i < notes; i++) {
-      const t = now + i * 0.4;
+      const t = now + i * 0.5;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(baseFreq, t);
-      osc.frequency.linearRampToValueAtTime(baseFreq * 1.05, t + 0.2);
-      osc.frequency.linearRampToValueAtTime(baseFreq * 0.9, t + 0.32);
+      osc.frequency.linearRampToValueAtTime(baseFreq * 1.05, t + 0.25);
+      osc.frequency.linearRampToValueAtTime(baseFreq * 0.9, t + 0.4);
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.18, t + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      g.gain.linearRampToValueAtTime(0.18, t + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
       osc.connect(g); g.connect(masterGain);
-      osc.start(t); osc.stop(t + 0.36);
+      osc.start(t); osc.stop(t + 0.44);
     }
   } else {
     playBird();
@@ -2742,7 +2744,7 @@ function playCricketByType(type, volumeMul) {
     const pulses = 3 + Math.floor(Math.random() * 3);
     const freq = 4200 + Math.random() * 800;
     for (let i = 0; i < pulses; i++) {
-      const t = now + i * 0.06;
+      const t = now + i * 0.09;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
       osc.type = 'square';
@@ -2750,34 +2752,34 @@ function playCricketByType(type, volumeMul) {
       const bp = audioCtx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 12;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.055 * volumeMul, t + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      g.gain.linearRampToValueAtTime(0.07 * volumeMul, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
       osc.connect(bp); bp.connect(g); g.connect(masterGain);
-      osc.start(t); osc.stop(t + 0.06);
+      osc.start(t); osc.stop(t + 0.09);
     }
   } else if (type === 1) {
     const pulses = 4 + Math.floor(Math.random() * 3);
     const baseFreq = 2800 + Math.random() * 600;
     for (let i = 0; i < pulses; i++) {
-      const t = now + i * 0.07;
+      const t = now + i * 0.10;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(baseFreq, t);
-      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.92, t + 0.05);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.92, t + 0.07);
       const bp = audioCtx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = baseFreq; bp.Q.value = 8;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.068 * volumeMul, t + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      g.gain.linearRampToValueAtTime(0.082 * volumeMul, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
       osc.connect(bp); bp.connect(g); g.connect(masterGain);
-      osc.start(t); osc.stop(t + 0.07);
+      osc.start(t); osc.stop(t + 0.10);
     }
   } else {
     const pulses = 5 + Math.floor(Math.random() * 3);
     const freq = 5600 + Math.random() * 900;
     for (let i = 0; i < pulses; i++) {
-      const t = now + i * 0.045;
+      const t = now + i * 0.06;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
       osc.type = 'sine';
@@ -2785,10 +2787,10 @@ function playCricketByType(type, volumeMul) {
       const bp = audioCtx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 18;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.044 * volumeMul, t + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      g.gain.linearRampToValueAtTime(0.055 * volumeMul, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
       osc.connect(bp); bp.connect(g); g.connect(masterGain);
-      osc.start(t); osc.stop(t + 0.05);
+      osc.start(t); osc.stop(t + 0.06);
     }
   }
 }
@@ -3026,6 +3028,17 @@ requestAnimationFrame(renderFarewellPetals);
 lastTickTime = performance.now();
 
 scheduleGust();
+
+// ★ 页面打开就立刻预加载音频素材（但需要用户点一下才能播放）
+// 浏览器策略限制：必须用户交互后才能 resume audioCtx，所以这里只 try initAudio
+setTimeout(function () {
+  try {
+    initAudio();
+    loadRealAudio();
+  } catch (e) {
+    // 静默失败，等用户点开声音按钮再加载
+  }
+}, 800);
 
 applyUIMode();
 </script>
