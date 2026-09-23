@@ -872,11 +872,11 @@ function updateSceneInfoText() {
 const FROG_CONFIG = {
   target: [3,3,1,1,3,3,1,1,3,1,3,5,4,2],
   instruments: [
-    { note: 1, x: 0.82, y: 0.86 },
-    { note: 2, x: 0.76, y: 0.74 },
-    { note: 3, x: 0.70, y: 0.62 },
-    { note: 4, x: 0.64, y: 0.50 },
-    { note: 5, x: 0.58, y: 0.38 }
+    { note: 1, x: 0.15, y: 0.88 },
+    { note: 2, x: 0.30, y: 0.88 },
+    { note: 3, x: 0.50, y: 0.88 },
+    { note: 4, x: 0.70, y: 0.88 },
+    { note: 5, x: 0.85, y: 0.88 }
   ],
   birdSpot: { x: 0.15, y: 0.20 },
   cricketSpot: { x: 0.15, y: 0.75 },
@@ -1239,6 +1239,7 @@ function checkFrogHit(clientX, clientY) {
   const now = performance.now();
   if (now < FROG_CONFIG.cooldownUntil) return;
 
+  // ---- 1. 乐器蛙判定（像素判定） ----
   for (let i = 0; i < FROG_CONFIG.instruments.length; i++) {
     const inst = FROG_CONFIG.instruments[i];
     const dx = clientX - inst.x * W;
@@ -1269,17 +1270,19 @@ function checkFrogHit(clientX, clientY) {
     }
   }
 
-  const bdx = px - FROG_CONFIG.birdSpot.x;
-  const bdy = py - FROG_CONFIG.birdSpot.y;
-  if (Math.sqrt(bdx * bdx + bdy * bdy) < FROG_CONFIG.hitRadius) {
+  // ---- 2. 鸟鸣判定（像素判定） ----
+  const bdx = clientX - FROG_CONFIG.birdSpot.x * W;
+  const bdy = clientY - FROG_CONFIG.birdSpot.y * H;
+  if (Math.sqrt(bdx * bdx + bdy * bdy) < FROG_CONFIG.hitRadiusPx) {
     synthBirdCall([3, 3, 1, 1]);
     FROG_CONFIG.cooldownUntil = now + 1500;
     return;
   }
 
-  const cdx = px - FROG_CONFIG.cricketSpot.x;
-  const cdy = py - FROG_CONFIG.cricketSpot.y;
-  if (Math.sqrt(cdx * cdx + cdy * cdy) < FROG_CONFIG.cricketHitRadius) {
+  // ---- 3. 虫鸣判定（像素判定） ----
+  const cdx = clientX - FROG_CONFIG.cricketSpot.x * W;
+  const cdy = clientY - FROG_CONFIG.cricketSpot.y * H;
+  if (Math.sqrt(cdx * cdx + cdy * cdy) < FROG_CONFIG.hitRadiusPx) {
     synthCricketCall([3, 1, 3]);
     FROG_CONFIG.cooldownUntil = now + 1000;
     return;
