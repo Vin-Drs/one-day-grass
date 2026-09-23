@@ -63,6 +63,29 @@
     opacity: 0;
     transition: opacity 0.25s linear;
   }
+  #farewellCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    z-index: 11;
+    pointer-events: none;
+    background: transparent;
+  }
+  #memoryWrap {
+    position: absolute; inset: 0; z-index: 15;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    mix-blend-mode: screen;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(200, 240, 255, 0.15) 0%,
+      rgba(180, 220, 255, 0.08) 45%,
+      rgba(150, 200, 240, 0.04) 75%,
+      rgba(100, 160, 220, 0) 100%);
+  }
+  body.scene-sky #memoryWrap { opacity: 1; }
   #vignette {
     position: absolute; inset: 0; z-index: 20;
     pointer-events: none;
@@ -186,6 +209,14 @@
     background: rgba(255,255,255,0.01);
   }
 
+  #debugDots {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 60;
+    display: none;
+  }
+
   #rotateHint {
     position: fixed; inset: 0; z-index: 200;
     display: none;
@@ -247,8 +278,12 @@
     <canvas id="fxCanvas" class="layer"></canvas>
     <canvas id="transitionCanvas" class="layer"></canvas>
     <canvas id="signCanvas"></canvas>
+    <canvas id="farewellCanvas"></canvas>
+    <div id="memoryWrap"></div>
     <div id="vignette"></div>
   </div>
+
+  <div id="debugDots"></div>
 
   <div class="speaker" id="speaker" title="开关声音">
     <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
@@ -332,6 +367,7 @@ const flowerCanvas = document.getElementById('flowerCanvas');
 const fxCanvas = document.getElementById('fxCanvas');
 const transitionCanvas = document.getElementById('transitionCanvas');
 const signCanvas = document.getElementById('signCanvas');
+const farewellCanvas = document.getElementById('farewellCanvas');
 const vignette = document.getElementById('vignette');
 const glowWrap = document.getElementById('glowWrap');
 const sunWrap = document.getElementById('sunWrap');
@@ -342,6 +378,7 @@ const goFullBtn = document.getElementById('goFullBtn');
 const ledBtn = document.getElementById('ledBtn');
 const hintText = document.getElementById('hintText');
 const speaker = document.getElementById('speaker');
+const debugDots = document.getElementById('debugDots');
 
 const bgCtx = bgCanvas.getContext('2d');
 const glowCtx = glowLayer.getContext('2d');
@@ -353,6 +390,7 @@ const flowerCtx = flowerCanvas.getContext('2d');
 const fxCtx = fxCanvas.getContext('2d');
 const transCtx = transitionCanvas.getContext('2d');
 const signCtx = signCanvas.getContext('2d');
+const farewellCtx = farewellCanvas.getContext('2d');
 
 const isMobile = (window.innerWidth < 720) || ('ontouchstart' in window && window.innerWidth < 1024);
 let PIXEL = isMobile ? 4 : 3;
@@ -366,12 +404,21 @@ const WIND_DY = Math.sin(WIND_ANGLE);
 const MAX_PARTICLES = isMobile ? 160 : 400;
 const MAX_RIPPLES = isMobile ? 20 : 40;
 
+const skyParticles = [];
+const frogSparks = [];
+let glowBlobs = [];
+
+let farewellPetalsActive = false;
+let farewellPetalTimer = null;
+
+let bell1742LastTriggered = -1;
+
 // ======================================================
 // 1. 场景配色
 // ======================================================
 const SCENES = [
   {
-    name: '清晨', startH: 2, endH: 5,
+    name: '清晨', startH: 4, endH: 6,
     dark:    ['#303e46','#36444c','#3c4a52','#425058','#48565e'],
     mid:     ['#5a7a4a','#638456','#6c8e62','#75986e','#7ea27a','#87ac86','#90b692','#99c09e'],
     sun:     ['#a8c890','#b0ce9a','#b8d4a4','#c0daae','#c8e0b8','#d0e6c2','#d8eccc','#e0f2d6'],
@@ -395,7 +442,7 @@ const SCENES = [
     cricketDelayMin: 35000, cricketDelayRange: 35000
   },
   {
-    name: '草地', startH: 5, endH: 8,
+    name: '草地', startH: 6, endH: 11,
     dark:    ['#1e3f0c','#264a10','#2e5514','#386018','#426b1c'],
     mid:     ['#426b1c','#4c7620','#568124','#608c28','#6a972c','#74a230','#7ead34','#88b838','#92c33c','#9cce40'],
     sun:     ['#7ea02a','#8aaa30','#96b436','#a2be3c','#aec842','#baca48','#c6d44e','#d2de54','#dee85a','#eaf260','#f0f870','#f8ff80'],
@@ -420,7 +467,7 @@ const SCENES = [
     cricketDelayMin: 10000, cricketDelayRange: 12000
   },
   {
-    name: '麦子', startH: 8, endH: 13,
+    name: '麦子', startH: 11, endH: 13,
     dark:    ['#8a5418','#96601c','#a26c20','#ae7824','#ba8428'],
     mid:     ['#b8942c','#c2a030','#cca834','#d6b038','#e0b83c','#e8c240','#ecc848','#f0d050'],
     sun:     ['#e8da58','#ecdf60','#f0e468','#f4e870','#f6ec78','#f8f080','#faf488','#fcf890'],
@@ -494,7 +541,7 @@ const SCENES = [
     cricketDelayMin: 10000, cricketDelayRange: 12000
   },
   {
-    name: '夜间', startH: 20, endH: 2,
+    name: '夜间', startH: 20, endH: 4,
     dark:    ['#1a1838','#201d44','#262250','#2c275c','#322c68'],
     mid:     ['#2a3070','#323a7c','#3a4488','#424e94','#4a58a0','#5262ac','#5a6cb8','#6276c4'],
     sun:     ['#7a8ad0','#8494d8','#8e9ee0','#98a8e8','#a2b2f0','#acbcf8','#b6c6ff','#c0d0ff'],
@@ -516,18 +563,44 @@ const SCENES = [
     windFreq: 360, windGain: 0.18, gustPeak: 0.42,
     birdDelayMin: 40000, birdDelayRange: 40000,
     cricketDelayMin: 8000, cricketDelayRange: 15000
+  },
+  {
+    name: '天蓝之境', startH: -1, endH: -1,
+    dark:    ['#1a5a9e','#1e66aa','#2272b6','#267ec2','#2a8ace'],
+    mid:     ['#2a8ace','#3496d8','#3ea2e2','#48aeec','#52baf6','#5cc6ff','#70ccff','#84d4ff','#98dcff','#ace4ff'],
+    sun:     ['#c0f0ff','#c8f4ff','#d0f8ff','#d8fcff','#e0ffff','#e8ffff','#f0ffff','#f8ffff'],
+    outline: ['#0a3a6e','#0e467e','#12528e','#165e9e'],
+    bright:  ['#d8f8ff','#e2faff','#ecfcff','#f6feff'],
+    lightPixels: [
+      'rgba(200,244,255,0.80)','rgba(216,248,255,0.78)','rgba(232,252,255,0.76)',
+      'rgba(244,254,255,0.74)','rgba(255,255,255,0.72)','rgba(255,255,255,0.70)'
+    ],
+    lightShadow: [
+      'rgba(150,210,240,0.46)','rgba(160,220,246,0.44)','rgba(170,228,252,0.42)'
+    ],
+    bgBase: '#2a8ace',
+    glow: ['rgba(220,250,255,0.75)','rgba(180,240,255,0.50)','rgba(140,220,255,0.22)','rgba(140,220,255,0)'],
+    glowOpacity: 0.85, sunOpacity: 1.0,
+    stars: 30, starTop: 1, starA: '#ffffff', starB: '#d0f0ff',
+    windRgb: [200,240,255],
+    vignette: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 42%, rgba(20,80,140,0.20) 75%, rgba(10,40,80,0.42) 100%)',
+    windFreq: 460, windGain: 0.14, gustPeak: 0.40,
+    birdDelayMin: 12000, birdDelayRange: 18000,
+    cricketDelayMin: 15000, cricketDelayRange: 20000
   }
 ];
 
 const TIMELINE = [
-  { idx: 0, startH: 2,    endH: 5    },
-  { idx: 1, startH: 5,    endH: 8    },
-  { idx: 2, startH: 8,    endH: 13   },
+  { idx: 0, startH: 4,    endH: 6    },
+  { idx: 1, startH: 6,    endH: 11   },
+  { idx: 2, startH: 11,   endH: 13   },
   { idx: 3, startH: 13,   endH: 14.5 },
   { idx: 1, startH: 14.5, endH: 15.5 },
   { idx: 4, startH: 15.5, endH: 20   },
-  { idx: 5, startH: 20,   endH: 2    }
+  { idx: 5, startH: 20,   endH: 4    }
 ];
+
+const SKY_SCENE_INDEX = SCENES.length - 1;
 
 function findTimelineIdx(h) {
   for (let i = 0; i < TIMELINE.length; i++) {
@@ -729,17 +802,29 @@ function makeFlowerColor(baseHex) {
   return 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
 }
 
+function makeRainbowFlowerColor() {
+  const h = Math.random();
+  const s = 0.85 + Math.random() * 0.15;
+  const l = 0.72 + Math.random() * 0.16;
+  const rgb = hslToRgb(h, s, l);
+  return 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+}
+
 // ======================================================
 // 3. 全局状态
 // ======================================================
 let currentScene = null;
-let currentTimelineIdx = 0;
+let previousScene = null;
+let previousTimelineIdx = 0;
 let isTransitioning = false;
 let transitionT = 0;
 const TRANSITION_DURATION = 12.0;
 const TRANSITION_FILL_RATIO = 4.0 / 12.0;
 const TRANSITION_HOLD_RATIO = 4.0 / 12.0;
 let lastTickTime = performance.now();
+
+let transitionColor = '#000';
+let transitionTargetScene = null;
 
 const bladeData = [];
 const lightPixels = [];
@@ -761,21 +846,448 @@ const SIGN_DRS  = { text: 'Dr.S', color: '#8fa8c8', align: 'right' };
 const signTmpCanvas = document.createElement('canvas');
 const signTmpCtx = signTmpCanvas.getContext('2d');
 
-// ★ 时间显示
 let clockTimer = null;
-let uiMode = 0;  // 提前声明，避免 updateSceneInfoText 引用报错
+let uiMode = 0;
+
+let rewardActive = false;
+let rewardResetTimer = null;
+let rewardBgmTimer = null;
+let rewardBgmCount = 0;
 
 function updateSceneInfoText() {
   if (!currentScene) return;
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');
   const mm = String(now.getMinutes()).padStart(2, '0');
-  // 黄灯（0）和蓝灯（1）显示时间，绿灯（2）不显示
   if (uiMode === 0 || uiMode === 1) {
     sceneInfo.textContent = '当前：' + currentScene.name + ' · ' + hh + ':' + mm;
   } else {
     sceneInfo.textContent = '当前：' + currentScene.name;
   }
+}
+
+// ======================================================
+// 🐸 青蛙谜题模块
+// ======================================================
+const FROG_CONFIG = {
+  target: [3,3,1,1,3,3,1,1,3,1,3,5,4,2],
+  instruments: [
+    { note: 1, x: 0.62, y: 0.84 },
+    { note: 2, x: 0.73, y: 0.72 },
+    { note: 3, x: 0.83, y: 0.58 },
+    { note: 4, x: 0.86, y: 0.44 },
+    { note: 5, x: 0.83, y: 0.30 }
+  ],
+  birdSpot: { x: 0.15, y: 0.20 },
+  cricketSpot: { x: 0.15, y: 0.75 },
+  hitRadius: 0.09,
+  cricketHitRadius: 0.15,
+  inputSequence: [],
+  cooldownUntil: 0,
+  baseFreq: [277.18, 311.13, 349.23, 415.30, 466.16]
+};
+
+function renderDebugDots() {
+  if (!debugDots) return;
+  debugDots.innerHTML = '';
+}
+
+function synthFrogTone(noteIndex, duration) {
+  if (!audioCtx || !soundOn) return;
+  // ★ 有真实音频则优先用真实音频
+  if (useRealAudio && AUDIO_ASSETS['frog_' + noteIndex]) {
+    const src = audioCtx.createBufferSource();
+    src.buffer = AUDIO_ASSETS['frog_' + noteIndex];
+    const g = audioCtx.createGain();
+    g.gain.value = 0.8;
+    src.connect(g); g.connect(masterGain);
+    src.start(0);
+    return;
+  }
+  duration = duration || 0.32;
+  const now = audioCtx.currentTime;
+  const freq = FROG_CONFIG.baseFreq[noteIndex - 1];
+
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq * 1.03, now);
+  osc.frequency.exponentialRampToValueAtTime(freq, now + 0.05);
+
+  const sub = audioCtx.createOscillator();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(freq / 2, now);
+
+  const lfo = audioCtx.createOscillator();
+  lfo.type = 'sine';
+  lfo.frequency.value = 22;
+  const lfoGain = audioCtx.createGain();
+  lfoGain.gain.value = freq * 0.012;
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc.frequency);
+
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.42, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  const subGain = audioCtx.createGain();
+  subGain.gain.setValueAtTime(0, now);
+  subGain.gain.linearRampToValueAtTime(0.14, now + 0.03);
+  subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  osc.connect(gain);
+  sub.connect(subGain);
+  gain.connect(masterGain);
+  subGain.connect(masterGain);
+
+  osc.start(now); sub.start(now); lfo.start(now);
+  osc.stop(now + duration + 0.05);
+  sub.stop(now + duration + 0.05);
+  lfo.stop(now + duration + 0.05);
+}
+
+function synthFrogQuarrel() {
+  if (!audioCtx || !soundOn) return;
+  const now = audioCtx.currentTime;
+  for (let i = 0; i < 5; i++) {
+    const t = now + i * 0.10 + Math.random() * 0.03;
+    const freq = FROG_CONFIG.baseFreq[i] * (0.9 + Math.random() * 0.25);
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(freq * 1.4, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.85, t + 0.10);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.28, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq * 1.5;
+    bp.Q.value = 5;
+    osc.connect(bp); bp.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.16);
+  }
+}
+
+// ★ 恢复旧版鸟鸣
+function synthBirdCall(notes, speed) {
+  if (!audioCtx || !soundOn) return;
+  speed = speed || 0.18;
+  const now = audioCtx.currentTime;
+  notes.forEach((n, i) => {
+    const t = now + i * speed;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    const freq = FROG_CONFIG.baseFreq[n - 1] * 2;
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.06, t + 0.04);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.96, t + 0.09);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.25, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.13);
+  });
+}
+
+function synthCricketCall(notes, speed) {
+  if (!audioCtx || !soundOn) return;
+  speed = speed || 0.14;
+  const now = audioCtx.currentTime;
+  notes.forEach((n, i) => {
+    const t = now + i * speed;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const bp = audioCtx.createBiquadFilter();
+    osc.type = 'triangle';
+    const freq = FROG_CONFIG.baseFreq[n - 1] * 4;
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.94, t + 0.05);
+    bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = 10;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.14, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    osc.connect(bp); bp.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.07);
+  });
+}
+
+function synthBellSequence() {
+  if (!audioCtx || !soundOn) return;
+  const now = audioCtx.currentTime;
+  const notes = [5, 4, 2];
+  const repeatGap = 3.2;
+  const noteGap = 0.55;
+  const tailDur = 3.2;
+  for (let repeat = 0; repeat < 3; repeat++) {
+    notes.forEach((n, i) => {
+      const t = now + repeat * repeatGap + i * noteGap;
+      const freq = FROG_CONFIG.baseFreq[n - 1] * 0.5;
+
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      const osc2 = audioCtx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 2, t);
+      const osc3 = audioCtx.createOscillator();
+      osc3.type = 'sine';
+      osc3.frequency.setValueAtTime(freq * 3, t);
+
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.30, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + tailDur);
+
+      const g2 = audioCtx.createGain();
+      g2.gain.setValueAtTime(0, t);
+      g2.gain.linearRampToValueAtTime(0.09, t + 0.01);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t + tailDur * 0.8);
+
+      const g3 = audioCtx.createGain();
+      g3.gain.setValueAtTime(0, t);
+      g3.gain.linearRampToValueAtTime(0.04, t + 0.01);
+      g3.gain.exponentialRampToValueAtTime(0.0001, t + tailDur * 0.6);
+
+      const delay = audioCtx.createDelay();
+      delay.delayTime.value = 0.42;
+      const delayGain = audioCtx.createGain();
+      delayGain.gain.value = 0.32;
+      g.connect(delay);
+      delay.connect(delayGain);
+      delayGain.connect(masterGain);
+
+      osc.connect(g); g.connect(masterGain);
+      osc2.connect(g2); g2.connect(masterGain);
+      osc3.connect(g3); g3.connect(masterGain);
+
+      osc.start(t); osc.stop(t + tailDur + 0.1);
+      osc2.start(t); osc2.stop(t + tailDur * 0.8 + 0.1);
+      osc3.start(t); osc3.stop(t + tailDur * 0.6 + 0.1);
+    });
+  }
+}
+
+function synthFrogCough() {
+  if (!audioCtx || !soundOn) return;
+  const now = audioCtx.currentTime;
+  const bufSize = Math.floor(audioCtx.sampleRate * 0.12);
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) {
+    const t = i / bufSize;
+    d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2);
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 800; bp.Q.value = 3;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.6, now);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+  src.connect(bp); bp.connect(g); g.connect(masterGain);
+  src.start(now); src.stop(now + 0.15);
+}
+
+function playRewardBGM() {
+  if (!audioCtx || !soundOn) return;
+  // ★ 有真实 BGM 则优先用真实 BGM
+  if (useRealAudio && AUDIO_ASSETS.symphony) {
+    const src = audioCtx.createBufferSource();
+    src.buffer = AUDIO_ASSETS.symphony;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.8;
+    src.connect(g); g.connect(masterGain);
+    src.start(0);
+    const dur = AUDIO_ASSETS.symphony.duration * 1000 + 500;
+    rewardBgmCount++;
+    if (rewardActive && rewardBgmCount < 3) {
+      rewardBgmTimer = setTimeout(function () {
+        if (rewardActive) playRewardBGM();
+      }, dur);
+    } else {
+      rewardBgmTimer = null;
+    }
+    return;
+  }
+  const now = audioCtx.currentTime;
+  const A = FROG_CONFIG.baseFreq;
+
+  const melody = [
+    { t: 0.0,  n: 1, d: 0.4 },
+    { t: 0.5,  n: 2, d: 0.4 },
+    { t: 1.0,  n: 3, d: 0.4 },
+    { t: 1.5,  n: 4, d: 0.4 },
+    { t: 2.0,  n: 5, d: 0.8 },
+    { t: 3.0,  n: 5, d: 0.4 },
+    { t: 3.5,  n: 4, d: 0.4 },
+    { t: 4.0,  n: 3, d: 0.4 },
+    { t: 4.5,  n: 2, d: 0.8 },
+    { t: 5.5,  n: 3, d: 0.4 },
+    { t: 6.0,  n: 4, d: 0.4 },
+    { t: 6.5,  n: 5, d: 0.4 },
+    { t: 7.0,  n: 4, d: 0.4 },
+    { t: 7.5,  n: 3, d: 1.0 },
+    { t: 9.0,  n: 2, d: 1.2 },
+    { t: 10.5, n: 1, d: 2.5 }
+  ];
+
+  const bass = [
+    { t: 0.0,  n: 1, d: 1.8 },
+    { t: 2.0,  n: 1, d: 1.8 },
+    { t: 4.0,  n: 2, d: 1.8 },
+    { t: 6.0,  n: 3, d: 1.8 },
+    { t: 8.0,  n: 2, d: 1.8 },
+    { t: 10.0, n: 1, d: 3.0 }
+  ];
+
+  bass.forEach(function (note) {
+    const t = now + note.t;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(A[note.n - 1] / 4, t);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.3);
+    g.gain.setValueAtTime(0.12, t + note.d - 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + note.d + 0.2);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + note.d + 0.3);
+  });
+
+  melody.forEach(function (note) {
+    const t = now + note.t;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(A[note.n - 1], t);
+    const lfo = audioCtx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 5;
+    const lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = A[note.n - 1] * 0.008;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.05);
+    g.gain.setValueAtTime(0.22, t + note.d * 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + note.d + 0.15);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(t); osc.stop(t + note.d + 0.2);
+    lfo.start(t); lfo.stop(t + note.d + 0.2);
+  });
+
+  rewardBgmCount++;
+  if (rewardActive && rewardBgmCount < 3) {
+    rewardBgmTimer = setTimeout(function () {
+      if (rewardActive) playRewardBGM();
+    }, 13500);
+  } else {
+    rewardBgmTimer = null;
+  }
+}
+
+function triggerRewardTransition() {
+  if (rewardActive) return;
+  rewardActive = true;
+  rewardBgmCount = 0;
+  if (rewardBgmTimer) { clearTimeout(rewardBgmTimer); rewardBgmTimer = null; }
+  if (rewardResetTimer) { clearTimeout(rewardResetTimer); rewardResetTimer = null; }
+
+  previousScene = currentScene;
+  previousTimelineIdx = currentTimelineIdx;
+
+  const skyScene = SCENES[SKY_SCENE_INDEX];
+  transitionTargetScene = skyScene;
+  transitionColor = '#5ab8e8';
+
+  startBlackTransitionWithScene(skyScene);
+}
+
+function endReward() {
+  if (!rewardActive) return;
+  rewardActive = false;
+  if (rewardResetTimer) { clearTimeout(rewardResetTimer); rewardResetTimer = null; }
+  if (rewardBgmTimer) { clearTimeout(rewardBgmTimer); rewardBgmTimer = null; }
+
+  farewellPetalsActive = true;
+  if (farewellPetalTimer) clearTimeout(farewellPetalTimer);
+  farewellPetalTimer = setTimeout(function () {
+    farewellPetalsActive = false;
+    farewellPetalTimer = null;
+  }, 7000);
+
+  const backScene = SCENES[TIMELINE[previousTimelineIdx].idx];
+  transitionColor = '#000';
+  startBlackTransitionWithScene(backScene);
+  currentTimelineIdx = previousTimelineIdx;
+  updateScenePanelActive(previousTimelineIdx);
+}
+
+function checkFrogHit(clientX, clientY) {
+  if (!currentScene || isTransitioning) return;
+  if (currentScene.name === '天蓝之境') return;
+  const now = performance.now();
+  if (now < FROG_CONFIG.cooldownUntil) return;
+
+  const px = clientX / W;
+  const py = clientY / H;
+
+  for (let i = 0; i < FROG_CONFIG.instruments.length; i++) {
+    const inst = FROG_CONFIG.instruments[i];
+    const dx = px - inst.x;
+    const dy = py - inst.y;
+    if (Math.sqrt(dx * dx + dy * dy) < FROG_CONFIG.hitRadius) {
+      synthFrogTone(inst.note);
+      FROG_CONFIG.cooldownUntil = now + 400;
+      FROG_CONFIG.inputSequence.push(inst.note);
+      console.log('🐸 输入：', FROG_CONFIG.inputSequence.join(' '));
+
+      if (FROG_CONFIG.inputSequence.length >= 4) {
+        const idx = FROG_CONFIG.inputSequence.length - 1;
+        if (FROG_CONFIG.inputSequence[idx] !== FROG_CONFIG.target[idx]) {
+          setTimeout(function () {
+            synthFrogQuarrel();
+          }, 200);
+          FROG_CONFIG.cooldownUntil = now + 1500;
+          FROG_CONFIG.inputSequence = [];
+          console.log('💥 青蛙吵架，输入已清空');
+          return;
+        }
+      }
+
+      if (FROG_CONFIG.inputSequence.length === FROG_CONFIG.target.length) {
+        checkFrogSequence();
+      }
+      return;
+    }
+  }
+
+  const bdx = px - FROG_CONFIG.birdSpot.x;
+  const bdy = py - FROG_CONFIG.birdSpot.y;
+  if (Math.sqrt(bdx * bdx + bdy * bdy) < FROG_CONFIG.hitRadius) {
+    synthBirdCall([3, 3, 1, 1]);
+    FROG_CONFIG.cooldownUntil = now + 1500;
+    return;
+  }
+
+  const cdx = px - FROG_CONFIG.cricketSpot.x;
+  const cdy = py - FROG_CONFIG.cricketSpot.y;
+  if (Math.sqrt(cdx * cdx + cdy * cdy) < FROG_CONFIG.cricketHitRadius) {
+    synthCricketCall([3, 1, 3]);
+    FROG_CONFIG.cooldownUntil = now + 1000;
+    return;
+  }
+}
+
+function spawnFrogSparks(x, y, noteIndex) {
+  return;
+}
+
+function checkFrogSequence() {
+  console.log('🎉 青蛙密码正确！');
+  triggerRewardTransition();
 }
 
 // ======================================================
@@ -845,7 +1357,8 @@ function preGenerate() {
 
   flowers.length = 0;
   const sceneForFlower = currentScene || SCENES[0];
-  const spacing2 = isMobile ? 22 : 16;
+  const isSkyScene = (sceneForFlower.name === '天蓝之境');
+  const spacing2 = isMobile ? 20 : 14;
   for (let gy = 0; gy < ROWS; gy += spacing2) {
     for (let gx = 0; gx < COLS; gx += spacing2) {
       const x = gx + Math.floor((Math.random() - 0.5) * spacing2);
@@ -853,29 +1366,38 @@ function preGenerate() {
       if (x < 1 || x >= COLS - 1 || y < 2 || y >= ROWS) continue;
       const nx = x / COLS, ny = y / ROWS;
       const m = lightMask(nx, ny);
-      if (m < 0.3) continue;
-      let zoneWeight = m < 0.55 ? 0.35 : (m < 0.75 ? 0.8 : 1.0);
+      let zoneWeight;
+      if (m > 0.7) zoneWeight = 1.0;
+      else if (m > 0.4) zoneWeight = 0.7;
+      else if (m > 0.1) zoneWeight = 0.4;
+      else zoneWeight = 0.25;
       const n1 = smoothNoise(nx * 3.5, ny * 3.5, 31);
       const n2 = smoothNoise(nx * 9, ny * 9, 32);
       const n3 = smoothNoise(nx * 22, ny * 22, 33);
       let d = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
       d = d * d;
-      if (Math.random() > d * zoneWeight * 0.8) continue;
+      if (Math.random() > d * zoneWeight * 0.85) continue;
       const fx = x + (Math.random() - 0.5) * 4;
       const fy = y + (Math.random() - 0.5) * 4;
-      const m2 = lightMask(fx / COLS, fy / ROWS);
-      if (m2 < 0.25) continue;
       const sizeRoll = Math.random();
       let size;
-      if (sizeRoll < 0.6) size = 1;
+      if (sizeRoll < 0.55) size = 1;
       else if (sizeRoll < 0.85) size = 2;
       else size = 3;
-      const basePetal = sceneForFlower.mid[Math.floor(Math.random() * sceneForFlower.mid.length)];
-      const baseCenter = sceneForFlower.sun[Math.floor(Math.random() * sceneForFlower.sun.length)];
-      const petalColor = makeFlowerColor(basePetal);
-      const centerColor = makeFlowerColor(baseCenter);
+
+      let petalColor, centerColor;
+      if (isSkyScene) {
+        petalColor = makeRainbowFlowerColor();
+        centerColor = makeRainbowFlowerColor();
+      } else {
+        const basePetal = sceneForFlower.mid[Math.floor(Math.random() * sceneForFlower.mid.length)];
+        const baseCenter = sceneForFlower.sun[Math.floor(Math.random() * sceneForFlower.sun.length)];
+        petalColor = makeFlowerColor(basePetal);
+        centerColor = makeFlowerColor(baseCenter);
+      }
+
       flowers.push({
-        x: fx, y: fy, m: m2,
+        x: fx, y: fy, m: m,
         type: 'cross',
         size: size,
         petalColor: petalColor,
@@ -893,6 +1415,99 @@ function preGenerate() {
   const starCount = isMobile ? 50 : 80;
   for (let i = 0; i < starCount; i++) {
     starField.push({ x: Math.random(), y: Math.random(), bright: Math.random() > 0.6 });
+  }
+
+  glowBlobs = [];
+  skyParticles.length = 0;
+
+  if (isSkyScene) {
+    const blobCount = isMobile ? 6 : 10;
+    for (let i = 0; i < blobCount; i++) {
+      const angle = (i / blobCount) * Math.PI * 2;
+      const r = 0.14 + Math.random() * 0.16;
+      const bx = SUN.cx + Math.cos(angle) * r;
+      const by = SUN.cy + Math.sin(angle) * r * 0.7;
+      glowBlobs.push({
+        x: bx, y: by,
+        r: 0.16 + Math.random() * 0.14,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.3 + Math.random() * 0.5,
+        color: 'rgba(0, 195, 255, ' + (0.12 + Math.random() * 0.10) + ')'
+      });
+    }
+    glowBlobs.push({
+      x: SUN.cx, y: SUN.cy, r: 0.38,
+      phase: 0, speed: 0.2,
+      color: 'rgba(180, 240, 255, 0.12)'
+    });
+
+    bladeData.forEach(function (b) {
+      if (Math.random() < 0.07) {
+        b.glowing = true;
+        b.glowColor = 'rgba(0, 195, 255, ' + (0.6 + Math.random() * 0.4) + ')';
+      }
+    });
+
+    const fireflyCount = isMobile ? 30 : 60;
+    for (let i = 0; i < fireflyCount; i++) {
+      skyParticles.push({
+        type: 'firefly',
+        x: Math.random(),
+        y: Math.random() * 0.85 + 0.1,
+        r: 0.8 + Math.random() * 1.6,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.3 + Math.random() * 0.6,
+        hue: 180 + Math.random() * 40
+      });
+    }
+
+    const layer1Count = isMobile ? 14 : 28;
+    for (let i = 0; i < layer1Count; i++) {
+      skyParticles.push({
+        type: 'petal',
+        layer: 1,
+        shape: Math.floor(Math.random() * 3),
+        x: Math.random(),
+        y: Math.random(),
+        vy: 0.00009 + Math.random() * 0.00015,
+        vx: (Math.random() - 0.5) * 0.00010,
+        phase: Math.random() * Math.PI * 2,
+        hue: 340 + Math.random() * 20,
+        flip: Math.random() < 0.5 ? 1 : -1,
+        size: Math.random() < 0.7 ? 2 : 3
+      });
+    }
+    const layer2Count = isMobile ? 10 : 20;
+    for (let i = 0; i < layer2Count; i++) {
+      skyParticles.push({
+        type: 'petal',
+        layer: 2,
+        shape: Math.floor(Math.random() * 3),
+        x: Math.random(),
+        y: Math.random(),
+        vy: 0.000045 + Math.random() * 0.00008,
+        vx: (Math.random() - 0.5) * 0.00005,
+        phase: Math.random() * Math.PI * 2,
+        hue: 48,
+        saturation: 60,
+        lightness: 96,
+        flip: Math.random() < 0.5 ? 1 : -1,
+        size: 4
+      });
+    }
+
+    const starCount2 = isMobile ? 50 : 100;
+    for (let i = 0; i < starCount2; i++) {
+      skyParticles.push({
+        type: 'star',
+        x: Math.random(),
+        y: Math.random(),
+        size: Math.random() < 0.6 ? 2 : 3,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.8 + Math.random() * 1.6,
+        color: Math.random() < 0.5 ? '#a0e4ff' : '#00c3ff'
+      });
+    }
   }
 }
 
@@ -955,6 +1570,14 @@ function renderGrassTo(ctx, scene) {
     }
 
     drawBlade(ctx, b, color, outlineColor, rand(scene.bright), 1, false);
+
+    if (b.glowing) {
+      const tipX = Math.round(b.x + WIND_DX * b.bendAmount);
+      const tipY = Math.round(b.y - b.height);
+      ctx.fillStyle = b.glowColor;
+      ctx.fillRect(tipX, tipY, 1, 1);
+      ctx.fillRect(tipX - 1, tipY, 1, 1);
+    }
   }
 }
 
@@ -1043,6 +1666,7 @@ function renderGlowTo(scene) {
   glowLayer.style.width = (W + 120) + 'px';
   glowLayer.style.height = (H + 120) + 'px';
   glowCtx.clearRect(0, 0, gw, gh);
+
   const gx = SUN.cx * gw, gy = SUN.cy * gh;
   const w = SUN.w * gw * 0.7, h = SUN.h * gh * 0.7;
   glowCtx.save();
@@ -1056,6 +1680,22 @@ function renderGlowTo(scene) {
   glowCtx.fillStyle = grad;
   glowCtx.fillRect(-w * 1.6, -h * 1.6, w * 3.2, h * 3.2);
   glowCtx.restore();
+
+  if (glowBlobs.length > 0) {
+    const t = performance.now() * 0.001;
+    glowBlobs.forEach(function (blob) {
+      const pulse = 1 + Math.sin(t * blob.speed + blob.phase) * 0.15;
+      const bx = blob.x * gw;
+      const by = blob.y * gh;
+      const br = blob.r * Math.min(gw, gh) * pulse;
+      const bg = glowCtx.createRadialGradient(bx, by, 0, bx, by, br);
+      bg.addColorStop(0, blob.color);
+      bg.addColorStop(1, 'rgba(0, 195, 255, 0)');
+      glowCtx.fillStyle = bg;
+      glowCtx.fillRect(bx - br, by - br, br * 2, br * 2);
+    });
+  }
+
   glowWrap.style.opacity = scene.glowOpacity;
 }
 
@@ -1142,6 +1782,56 @@ function renderFlowersTo(scene, ctx) {
   }
 }
 
+function drawPetalShape(ctx, cx, cy, shape, layer, size, baseHue, baseSat, baseLit, flip) {
+  let fill1, fill2;
+  if (layer === 2) {
+    fill1 = 'hsla(' + baseHue + ', ' + baseSat + '%, ' + baseLit + '%, 0.96)';
+    fill2 = 'hsla(' + baseHue + ', ' + Math.min(100, baseSat + 10) + '%, 99%, 1)';
+  } else {
+    fill1 = 'hsla(' + baseHue + ', ' + baseSat + '%, ' + baseLit + '%, 0.92)';
+    fill2 = 'hsla(' + baseHue + ', ' + Math.min(100, baseSat + 10) + '%, 96%, 1)';
+  }
+
+  if (shape === 0) {
+    if (flip > 0) {
+      ctx.fillStyle = fill1;
+      ctx.fillRect(cx, cy - size, 1, size * 2 + 1);
+      ctx.fillRect(cx - 1, cy - size + 1, 1, size * 2 - 1);
+      ctx.fillRect(cx + 1, cy - size + 1, 1, size * 2 - 1);
+      ctx.fillRect(cx, cy - size - 1, 1, 1);
+      ctx.fillRect(cx, cy + size + 1, 1, 1);
+    } else {
+      ctx.fillStyle = fill1;
+      ctx.fillRect(cx - size, cy, size * 2 + 1, 1);
+      ctx.fillRect(cx - size + 1, cy - 1, size * 2 - 1, 1);
+      ctx.fillRect(cx - size + 1, cy + 1, size * 2 - 1, 1);
+      ctx.fillRect(cx - size - 1, cy, 1, 1);
+      ctx.fillRect(cx + size + 1, cy, 1, 1);
+    }
+  } else if (shape === 1) {
+    ctx.fillStyle = fill1;
+    ctx.fillRect(cx, cy - size, 1, 1);
+    ctx.fillRect(cx, cy + size, 1, 1);
+    ctx.fillRect(cx - size, cy, 1, 1);
+    ctx.fillRect(cx + size, cy, 1, 1);
+    ctx.fillRect(cx, cy - size + 1, 1, 1);
+    ctx.fillRect(cx, cy + size - 1, 1, 1);
+    ctx.fillRect(cx - size + 1, cy, 1, 1);
+    ctx.fillRect(cx + size - 1, cy, 1, 1);
+    ctx.fillStyle = fill2;
+    ctx.fillRect(cx, cy, 1, 1);
+  } else {
+    ctx.fillStyle = fill1;
+    ctx.fillRect(cx, cy - size, 1, 1);
+    ctx.fillRect(cx + size - 1, cy - 1, 1, 1);
+    ctx.fillRect(cx + size - 1, cy + 1, 1, 1);
+    ctx.fillRect(cx - size + 1, cy + 1, 1, 1);
+    ctx.fillRect(cx - size + 1, cy - 1, 1, 1);
+    ctx.fillStyle = fill2;
+    ctx.fillRect(cx, cy, 1, 1);
+  }
+}
+
 // ======================================================
 // 6. 静态场景渲染
 // ======================================================
@@ -1174,6 +1864,12 @@ function renderScene(scene) {
   fxCtx.clearRect(0, 0, COLS, ROWS);
 
   vignette.style.background = scene.vignette;
+
+  if (scene.name === '天蓝之境') {
+    document.body.classList.add('scene-sky');
+  } else {
+    document.body.classList.remove('scene-sky');
+  }
 }
 
 // ======================================================
@@ -1186,6 +1882,13 @@ function startBlackTransition(timelineIdx) {
     updateScenePanelActive(timelineIdx);
     return;
   }
+  transitionColor = '#000';
+  startBlackTransitionWithScene(newScene);
+  currentTimelineIdx = timelineIdx;
+  updateScenePanelActive(timelineIdx);
+}
+
+function startBlackTransitionWithScene(newScene) {
   endGust();
   currentWaveFront = -1;
   currentGustEnv = 0;
@@ -1195,22 +1898,25 @@ function startBlackTransition(timelineIdx) {
   transitionT = 0;
   transitionSwapped = false;
   isTransitioning = true;
+  transitionTargetScene = newScene;
 
   transitionCanvas.width = COLS; transitionCanvas.height = ROWS;
   transitionCanvas.style.width = W + 'px'; transitionCanvas.style.height = H + 'px';
   transCtx.clearRect(0, 0, COLS, ROWS);
 
+  farewellCanvas.width = COLS; farewellCanvas.height = ROWS;
+  farewellCanvas.style.width = W + 'px'; farewellCanvas.style.height = H + 'px';
+  farewellCtx.clearRect(0, 0, COLS, ROWS);
+
   drawSigns();
   signCanvas.style.opacity = 0;
 
-  currentTimelineIdx = timelineIdx;
-  updateScenePanelActive(timelineIdx);
   sceneInfo.textContent = '→ ' + newScene.name;
 }
 
 function renderBlackFill(waveFront) {
   transCtx.clearRect(0, 0, COLS, ROWS);
-  transCtx.fillStyle = '#000';
+  transCtx.fillStyle = transitionColor;
   for (let y = 0; y < ROWS; y++) {
     const ny = y / ROWS;
     for (let x = 0; x < COLS; x++) {
@@ -1234,7 +1940,7 @@ function renderBlackFill(waveFront) {
 
 function renderBlackRetreat(waveFront) {
   transCtx.clearRect(0, 0, COLS, ROWS);
-  transCtx.fillStyle = '#000';
+  transCtx.fillStyle = transitionColor;
   for (let y = 0; y < ROWS; y++) {
     const ny = y / ROWS;
     for (let x = 0; x < COLS; x++) {
@@ -1335,7 +2041,7 @@ function updateBlackTransition(dt) {
       transitionSwapped = true;
     }
     transCtx.clearRect(0, 0, COLS, ROWS);
-    transCtx.fillStyle = '#000';
+    transCtx.fillStyle = transitionColor;
     transCtx.fillRect(0, 0, COLS, ROWS);
 
     const pHold = (transitionT - tFillEnd) / (tHoldEnd - tFillEnd);
@@ -1359,6 +2065,10 @@ function updateBlackTransition(dt) {
     const p = (transitionT - tHoldEnd) / (1 - tHoldEnd);
     const waveFront = -1.5 + p * 3.5;
     renderBlackRetreat(waveFront);
+
+    if (farewellPetalsActive) {
+      renderFarewellPetals();
+    }
   }
 
   if (transitionT >= 1) {
@@ -1368,7 +2078,42 @@ function updateBlackTransition(dt) {
     transCtx.clearRect(0, 0, COLS, ROWS);
     signCanvas.style.opacity = 0;
     updateSceneInfoText();
+    if (transitionColor !== '#000') {
+      transitionColor = '#000';
+    }
+    if (rewardActive && !rewardBgmTimer && rewardBgmCount === 0) {
+      requestAnimationFrame(function () {
+        if (rewardActive) {
+          playRewardBGM();
+          if (!rewardResetTimer) {
+            rewardResetTimer = setTimeout(function () {
+              endReward();
+            }, 50000);
+          }
+        }
+      });
+    }
   }
+}
+
+function renderFarewellPetals() {
+  farewellCtx.clearRect(0, 0, COLS, ROWS);
+  const t = performance.now() * 0.016;
+  for (let i = 0; i < skyParticles.length; i++) {
+    const p = skyParticles[i];
+    if (p.type !== 'petal') continue;
+    p.y += p.vy * 60;
+    p.x += p.vx * 60 + Math.sin(t * 1.0 + p.phase) * 0.0006;
+    if (p.y > 1.05) { p.y = -0.10; p.x = Math.random(); }
+    const fx = p.x * COLS;
+    const fy = p.y * ROWS;
+    if (p.layer === 2) {
+      drawPetalShape(farewellCtx, Math.round(fx), Math.round(fy), p.shape, 2, p.size, p.hue, p.saturation, p.lightness, p.flip);
+    } else {
+      drawPetalShape(farewellCtx, Math.round(fx), Math.round(fy), p.shape, 1, p.size, p.hue, 85, 88, p.flip);
+    }
+  }
+  requestAnimationFrame(renderFarewellPetals);
 }
 
 // ======================================================
@@ -1598,41 +2343,97 @@ requestAnimationFrame(renderFlowersLoop);
 function renderFx() {
   fxTime += 0.016;
   fxCtx.clearRect(0, 0, COLS, ROWS);
-  for (let i = ripples.length - 1; i >= 0; i--) {
-    const r = ripples[i];
-    r.r += (r.maxR - r.r) * 0.18;
-    r.life -= r.decay;
-    if (r.life <= 0) { ripples.splice(i, 1); continue; }
-    fxCtx.strokeStyle = r.color + (r.life * 0.5) + ')';
-    fxCtx.lineWidth = 1;
-    fxCtx.beginPath();
-    fxCtx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
-    fxCtx.stroke();
-  }
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.life -= p.decay;
-    if (p.life <= 0) { particles.splice(i, 1); continue; }
-    const swing = Math.sin(fxTime * 3.5 + p.swayPhase) * p.swayAmp * p.life;
-    const alpha = Math.min(1, p.life * 1.5);
-    fxCtx.globalAlpha = alpha;
-    for (let h = 0; h < p.height; h++) {
-      const t = h / p.height;
-      const offsetX = Math.round(p.bendX * p.bend * t * t + swing * t);
-      const offsetY = -h + Math.round(p.bendY * p.bend * t * t);
-      const cx = Math.round(p.x + offsetX);
-      const cy = Math.round(p.y + offsetY);
-      fxCtx.fillStyle = p.outline;
-      fxCtx.fillRect(cx, cy, 1, 1);
-      fxCtx.fillStyle = p.color;
-      fxCtx.fillRect(cx + 1, cy, 1, 1);
+
+  const isHeavyTransition = isTransitioning;
+
+  if (!isHeavyTransition) {
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      r.r += (r.maxR - r.r) * 0.18;
+      r.life -= r.decay;
+      if (r.life <= 0) { ripples.splice(i, 1); continue; }
+      fxCtx.strokeStyle = r.color + (r.life * 0.5) + ')';
+      fxCtx.lineWidth = 1;
+      fxCtx.beginPath();
+      fxCtx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+      fxCtx.stroke();
     }
-    fxCtx.globalAlpha = 1;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= p.decay;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      const swing = Math.sin(fxTime * 3.5 + p.swayPhase) * p.swayAmp * p.life;
+      const alpha = Math.min(1, p.life * 1.5);
+      fxCtx.globalAlpha = alpha;
+      for (let h = 0; h < p.height; h++) {
+        const t = h / p.height;
+        const offsetX = Math.round(p.bendX * p.bend * t * t + swing * t);
+        const offsetY = -h + Math.round(p.bendY * p.bend * t * t);
+        const cx = Math.round(p.x + offsetX);
+        const cy = Math.round(p.y + offsetY);
+        fxCtx.fillStyle = p.outline;
+        fxCtx.fillRect(cx, cy, 1, 1);
+        fxCtx.fillStyle = p.color;
+        fxCtx.fillRect(cx + 1, cy, 1, 1);
+      }
+      fxCtx.globalAlpha = 1;
+    }
   }
+
+  const showSkyParticles = currentScene && currentScene.name === '天蓝之境' && !isHeavyTransition && !farewellPetalsActive;
+
+  if (showSkyParticles) {
+    const t = fxTime;
+    for (let i = 0; i < skyParticles.length; i++) {
+      const p = skyParticles[i];
+      if (p.type === 'firefly') {
+        const fx = p.x * COLS;
+        const fy = p.y * ROWS;
+        const wobX = Math.sin(t * p.speed + p.phase) * 3;
+        const wobY = Math.cos(t * p.speed * 0.7 + p.phase) * 2.5;
+        const alpha = 0.5 + 0.5 * Math.sin(t * 1.5 + p.phase);
+        fxCtx.fillStyle = 'hsla(' + p.hue + ', 100%, 80%, ' + (alpha * 0.9) + ')';
+        fxCtx.fillRect(Math.round(fx + wobX), Math.round(fy + wobY), Math.ceil(p.r), Math.ceil(p.r));
+        fxCtx.fillStyle = 'hsla(' + p.hue + ', 100%, 75%, ' + (alpha * 0.25) + ')';
+        fxCtx.fillRect(Math.round(fx + wobX) - 1, Math.round(fy + wobY), 1, 1);
+        fxCtx.fillRect(Math.round(fx + wobX) + 1, Math.round(fy + wobY), 1, 1);
+        fxCtx.fillRect(Math.round(fx + wobX), Math.round(fy + wobY) - 1, 1, 1);
+        fxCtx.fillRect(Math.round(fx + wobX), Math.round(fy + wobY) + 1, 1, 1);
+      } else if (p.type === 'petal') {
+        p.y += p.vy * 60;
+        p.x += p.vx * 60 + Math.sin(t * 1.0 + p.phase) * 0.0006;
+        if (p.y > 1.05) { p.y = -0.10; p.x = Math.random(); }
+        const fx = p.x * COLS;
+        const fy = p.y * ROWS;
+        if (p.layer === 2) {
+          drawPetalShape(fxCtx, Math.round(fx), Math.round(fy), p.shape, 2, p.size, p.hue, p.saturation, p.lightness, p.flip);
+        } else {
+          drawPetalShape(fxCtx, Math.round(fx), Math.round(fy), p.shape, 1, p.size, p.hue, 85, 88, p.flip);
+        }
+      } else if (p.type === 'star') {
+        const alpha = 0.3 + 0.7 * Math.abs(Math.sin(t * p.speed + p.phase));
+        const fx = p.x * COLS;
+        const fy = p.y * ROWS;
+        fxCtx.globalAlpha = alpha;
+        fxCtx.fillStyle = p.color;
+        fxCtx.fillRect(Math.round(fx), Math.round(fy), p.size, p.size);
+        if (p.size >= 2) {
+          fxCtx.fillRect(Math.round(fx) - 1, Math.round(fy) + 1, 1, 1);
+          fxCtx.fillRect(Math.round(fx) + p.size, Math.round(fy) + 1, 1, 1);
+          fxCtx.fillRect(Math.round(fx) + 1, Math.round(fy) - 1, 1, 1);
+          fxCtx.fillRect(Math.round(fx) + 1, Math.round(fy) + p.size, 1, 1);
+        }
+        fxCtx.globalAlpha = 1;
+      }
+    }
+  }
+
   requestAnimationFrame(renderFx);
 }
 
 function onPressStart(clientX, clientY) {
+  checkFrogHit(clientX, clientY);
   const p = screenToPixel(clientX, clientY);
   pressX = clientX; pressY = clientY;
   lastTrailX = p.x; lastTrailY = p.y;
@@ -1772,6 +2573,37 @@ let audioCtx = null, soundOn = false, masterGain = null;
 let windGain = null, gustTimer = null, birdTimer = null, cricketTimer = null;
 const waves = document.getElementById('waves');
 const muteLine = document.getElementById('muteLine');
+
+// ★ 真实音频素材
+const AUDIO_ASSETS = {
+  frog_1: null, frog_2: null, frog_3: null, frog_4: null, frog_5: null,
+  symphony: null
+};
+let useRealAudio = false;
+let realAudioLoading = false;
+
+async function loadRealAudio() {
+  if (realAudioLoading || !audioCtx) return;
+  realAudioLoading = true;
+  const files = ['frog_1', 'frog_2', 'frog_3', 'frog_4', 'frog_5', 'symphony'];
+  for (const name of files) {
+    try {
+      const res = await fetch('sounds/' + name + '.wav');
+      const buf = await res.arrayBuffer();
+      AUDIO_ASSETS[name] = await audioCtx.decodeAudioData(buf);
+      console.log('🎧 已加载 sounds/' + name + '.wav');
+    } catch (e) {
+      console.warn('⚠️ 加载失败 sounds/' + name + '.wav', e);
+    }
+  }
+  if (AUDIO_ASSETS.frog_1 && AUDIO_ASSETS.symphony) {
+    useRealAudio = true;
+    console.log('🎧 真实音频已启用');
+  } else {
+    console.log('⚠️ 部分素材缺失，继续用代码合成');
+  }
+  realAudioLoading = false;
+}
 
 function initAudio() {
   if (audioCtx) return;
@@ -1986,6 +2818,8 @@ speaker.addEventListener('click', function (e) {
   e.stopPropagation();
   initAudio();
   if (audioCtx.state === 'suspended') audioCtx.resume();
+  // ★ 第一次打开声音时，异步加载真实音频素材
+  loadRealAudio();
   if (!soundOn) {
     soundOn = true;
     masterGain.gain.linearRampToValueAtTime(1.0, audioCtx.currentTime + 0.8);
@@ -2024,7 +2858,6 @@ function applyUIMode() {
   document.body.classList.remove('mode-sound', 'mode-immersive');
   
   if (uiMode === 0) {
-    // 全界面：提示 + 声音 + 全屏 + 时间
     hintText.classList.remove('hidden');
     speaker.style.display = '';
     fullBtn.style.display = '';
@@ -2033,7 +2866,6 @@ function applyUIMode() {
     document.body.classList.remove('mode-sound', 'mode-immersive');
     updateSceneInfoText();
   } else if (uiMode === 1) {
-    // 声音模式：提示隐藏，声音靠右，全屏隐藏，显示时间
     hintText.classList.add('hidden');
     speaker.style.display = '';
     fullBtn.style.display = 'none';
@@ -2042,7 +2874,6 @@ function applyUIMode() {
     document.body.classList.add('mode-sound');
     updateSceneInfoText();
   } else if (uiMode === 2) {
-    // 沉浸模式：全部隐藏（包括左上角信息），LED 1秒后隐身
     hintText.classList.add('hidden');
     speaker.style.display = 'none';
     fullBtn.style.display = 'none';
@@ -2059,7 +2890,6 @@ function applyUIMode() {
   }
 }
 
-// ★ 时钟：黄灯和蓝灯模式下每秒刷新
 function startClock() {
   if (clockTimer) clearInterval(clockTimer);
   clockTimer = setInterval(function () {
@@ -2079,6 +2909,7 @@ ledBtn.addEventListener('touchstart', function (e) {
 function jumpToTimeline(idx) {
   if (idx < 0 || idx >= TIMELINE.length) return;
   if (isTransitioning) return;
+  if (rewardActive) return;
   startBlackTransition(idx);
 }
 
@@ -2094,14 +2925,37 @@ document.querySelectorAll('.sceneBtn').forEach(btn => {
 });
 
 // ======================================================
-// 13. 主循环 / 场景检查
+// 13. 主循环 / 场景检查 / 17:42 钟声
 // ======================================================
 function checkTimeScene() {
   if (isTransitioning) return;
+  if (rewardActive) return;
+  if (farewellPetalsActive) return;
   const h = new Date().getHours() + new Date().getMinutes() / 60;
   const desired = findTimelineIdx(h);
   if (desired !== currentTimelineIdx) {
     startBlackTransition(desired);
+  }
+}
+
+function check1742Bell() {
+  if (!soundOn) return;
+  if (isTransitioning) return;
+  if (rewardActive) return;
+  const now = new Date();
+  const hh = now.getHours();
+  const mm = now.getMinutes();
+  const slot = hh * 60 + mm;
+  if (hh === 17 && mm === 42) {
+    if (bell1742LastTriggered !== slot) {
+      bell1742LastTriggered = slot;
+      console.log('🔔 17:42 钟声自动响起');
+      synthBellSequence();
+      const desired = findTimelineIdx(17.7);
+      if (desired !== currentTimelineIdx) {
+        startBlackTransition(desired);
+      }
+    }
   }
 }
 
@@ -2131,6 +2985,10 @@ function resizeAll() {
   transitionCanvas.style.width = W + 'px'; transitionCanvas.style.height = H + 'px';
   transCtx.clearRect(0, 0, COLS, ROWS);
 
+  farewellCanvas.width = COLS; farewellCanvas.height = ROWS;
+  farewellCanvas.style.width = W + 'px'; farewellCanvas.style.height = H + 'px';
+  farewellCtx.clearRect(0, 0, COLS, ROWS);
+
   signCanvas.width = W; signCanvas.height = H;
   signCanvas.style.width = W + 'px'; signCanvas.style.height = H + 'px';
   signCtx.clearRect(0, 0, W, H);
@@ -2145,6 +3003,7 @@ function resizeAll() {
   checkOrientation();
   updateSceneInfoText();
   startClock();
+  renderDebugDots();
 }
 
 window.addEventListener('resize', () => {
@@ -2154,9 +3013,11 @@ window.addEventListener('resize', () => {
 
 resizeAll();
 setInterval(checkTimeScene, 30000);
+setInterval(check1742Bell, 15000);
 requestAnimationFrame(mainLoop);
 requestAnimationFrame(renderGust);
 renderFx();
+requestAnimationFrame(renderFarewellPetals);
 lastTickTime = performance.now();
 
 scheduleGust();
@@ -2165,7 +3026,6 @@ applyUIMode();
 </script>
 
 <script>
-// 按 ` 键（波浪键）切换开发者面板显示/隐藏
 document.addEventListener('keydown', function (e) {
   if (e.key === '`' || e.key === '~' || e.code === 'Backquote') {
     var panel = document.getElementById('scenePanel');
