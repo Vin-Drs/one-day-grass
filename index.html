@@ -872,16 +872,16 @@ function updateSceneInfoText() {
 const FROG_CONFIG = {
   target: [3,3,1,1,3,3,1,1,3,1,3,5,4,2],
   instruments: [
-    { note: 1, x: 0.15, y: 0.88 },
+    { note: 1, x: 0.10, y: 0.88 },
     { note: 2, x: 0.30, y: 0.88 },
     { note: 3, x: 0.50, y: 0.88 },
     { note: 4, x: 0.70, y: 0.88 },
-    { note: 5, x: 0.85, y: 0.88 }
+    { note: 5, x: 0.90, y: 0.88 }
   ],
   birdSpot: { x: 0.15, y: 0.20 },
   cricketSpot: { x: 0.15, y: 0.60 },
   hitRadius: 0.09,
-  hitRadiusPx: 50,
+  hitRadiusPx: 80,
   cricketHitRadius: 0.15,
   inputSequence: [],
   cooldownUntil: 0,
@@ -895,7 +895,6 @@ function renderDebugDots() {
 
 function synthFrogTone(noteIndex, duration) {
   if (!audioCtx || !soundOn) return;
-  // ★ 有真实音频则优先用真实音频
   if (useRealAudio && AUDIO_ASSETS['frog_' + noteIndex]) {
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
@@ -1133,7 +1132,6 @@ function synthFrogCough() {
 
 function playRewardBGM() {
   if (!audioCtx || !soundOn) return;
-  // ★ 有真实 BGM 则优先用真实 BGM，音量调大
   if (useRealAudio && AUDIO_ASSETS.symphony) {
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
@@ -1141,7 +1139,7 @@ function playRewardBGM() {
     const src = audioCtx.createBufferSource();
     src.buffer = AUDIO_ASSETS.symphony;
     const g = audioCtx.createGain();
-    g.gain.value = 1.0;  // ★ 从 0.8 调到 1.0，更饱满
+    g.gain.value = 1.0;
     src.connect(g); g.connect(masterGain);
     src.start(0);
     const dur = AUDIO_ASSETS.symphony.duration * 1000 + 500;
@@ -1270,10 +1268,10 @@ function endReward() {
 }
 
 function checkFrogHit(clientX, clientY) {
-  if (!currentScene || isTransitioning) return;
-  if (currentScene.name === '天蓝之境') return;
+  if (!currentScene || isTransitioning) return false;
+  if (currentScene.name === '天蓝之境') return false;
   const now = performance.now();
-  if (now < FROG_CONFIG.cooldownUntil) return;
+  if (now < FROG_CONFIG.cooldownUntil) return false;
 
   // ---- 1. 乐器蛙判定（像素判定） ----
   for (let i = 0; i < FROG_CONFIG.instruments.length; i++) {
@@ -1295,14 +1293,14 @@ function checkFrogHit(clientX, clientY) {
           FROG_CONFIG.cooldownUntil = now + 1500;
           FROG_CONFIG.inputSequence = [];
           console.log('💥 青蛙吵架，输入已清空');
-          return;
+          return true;
         }
       }
 
       if (FROG_CONFIG.inputSequence.length === FROG_CONFIG.target.length) {
         checkFrogSequence();
       }
-      return;
+      return true;
     }
   }
 
@@ -1312,7 +1310,7 @@ function checkFrogHit(clientX, clientY) {
   if (Math.sqrt(bdx * bdx + bdy * bdy) < FROG_CONFIG.hitRadiusPx) {
     synthBirdCall([3, 3, 1, 1]);
     FROG_CONFIG.cooldownUntil = now + 1500;
-    return;
+    return true;
   }
 
   // ---- 3. 虫鸣判定（像素判定） ----
@@ -1321,8 +1319,10 @@ function checkFrogHit(clientX, clientY) {
   if (Math.sqrt(cdx * cdx + cdy * cdy) < FROG_CONFIG.hitRadiusPx) {
     synthCricketCall([3, 1, 3]);
     FROG_CONFIG.cooldownUntil = now + 1000;
-    return;
+    return true;
   }
+
+  return false;
 }
 
 function spawnFrogSparks(x, y, noteIndex) {
@@ -2477,11 +2477,13 @@ function renderFx() {
 }
 
 function onPressStart(clientX, clientY) {
-   if (!realAudioLoading && !useRealAudio) {
+  if (!realAudioLoading && !useRealAudio) {
     initAudio();
     loadRealAudio();
   }
-  checkFrogHit(clientX, clientY);
+  // ★ 先判定青蛙/鸟/虫，命中则直接 return，不再触发草的沙沙
+  if (checkFrogHit(clientX, clientY)) return;
+
   const p = screenToPixel(clientX, clientY);
   pressX = clientX; pressY = clientY;
   lastTrailX = p.x; lastTrailY = p.y;
@@ -2866,7 +2868,6 @@ speaker.addEventListener('click', function (e) {
   e.stopPropagation();
   initAudio();
   if (audioCtx.state === 'suspended') audioCtx.resume();
-  // ★ 第一次打开声音时，异步加载真实音频素材
   loadRealAudio();
   if (!soundOn) {
     soundOn = true;
@@ -3070,14 +3071,11 @@ lastTickTime = performance.now();
 
 scheduleGust();
 
-// ★ 页面打开就立刻预加载音频素材（但需要用户点一下才能播放）
-// 浏览器策略限制：必须用户交互后才能 resume audioCtx，所以这里只 try initAudio
 setTimeout(function () {
   try {
     initAudio();
     loadRealAudio();
   } catch (e) {
-    // 静默失败，等用户点开声音按钮再加载
   }
 }, 800);
 
